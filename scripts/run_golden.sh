@@ -22,9 +22,10 @@ fi
 echo "输入轨迹: $TRACE_DIR（$(ls "$TRACE_DIR" | wc -l) 条）"
 
 cd sut
-PYTHONIOENCODING=utf-8 .venv/Scripts/python run.py golden \
+PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1 LLM_DEBUG=1 .venv/Scripts/python run.py golden \
   --trace-dir "../$TRACE_DIR" \
   --skill-cache-dir ../data/skills_flat \
+  --policy-file ../agent/tau_bench/tau_bench/envs/retail/wiki.md \
   --regenerate-global \
   --batch-size 10 \
   2>&1 | tee -a "../$LOG"

@@ -24,9 +24,12 @@ Write-Host "输入轨迹: $traceDir（$n 条）"
 
 Set-Location sut
 $env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUNBUFFERED = "1"
+$env:LLM_DEBUG = "1"
 & .venv\Scripts\python.exe run.py golden `
   --trace-dir "..\$traceDir" `
   --skill-cache-dir ..\data\skills_flat `
+  --policy-file ..\agent\tau_bench\tau_bench\envs\retail\wiki.md `
   --regenerate-global `
   --batch-size 10 `
   2>&1 | Tee-Object -FilePath "..\$log" -Append
