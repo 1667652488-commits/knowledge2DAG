@@ -1,0 +1,47 @@
+[
+  {
+    "id": "NLI_BC38",
+    "category": "自然语言入参",
+    "subcategory": "客户分层分类query_description被写成自然语言",
+    "fixed_turns": [
+      "查一下小米的客户分层分类"
+    ],
+    "pass_criteria": [
+      "tool_calls 的 query_intent 为客户分层分类",
+      "tool_calls 的 query_description 应为标准格式 $$小米$$空$$空$$（或 supplementary_data/ref_url 缺省写'空'）",
+      "query_description 不应是自然语言整句（如含'帮我查询'、'查一下'、'分层分类'等描述性文字）",
+      "未因 query_description 格式错误导致 call_versatile 调用失败或返回解析异常"
+    ],
+    "expected_badcase": "agent 未按 SKILL.md 拼装结构化 query_description，将用户原话'帮我查询小米的分层分类'等自然语言整句直接塞进 query_description，导致后端归一化脚本解析失败"
+  },
+  {
+    "id": "NLI_BC39",
+    "category": "自然语言入参",
+    "subcategory": "客户行业分类query_description被写成自然语言",
+    "fixed_turns": [
+      "分析一下小米科技的客户行业分类"
+    ],
+    "pass_criteria": [
+      "tool_calls 的 query_intent 为客户行业分类",
+      "tool_calls 的 query_description 应为标准格式 $$小米科技$$空$$空$$",
+      "query_description 不应是自然语言整句（如含'分析一下'、'行业分类'等描述性文字）",
+      "未因 query_description 格式错误导致 call_versatile 调用失败或返回解析异常"
+    ],
+    "expected_badcase": "agent 未按 SKILL.md 拼装结构化 query_description，将自然语言整句直接作为 query_description 传入，导致解析失败"
+  },
+  {
+    "id": "NLI_BC40",
+    "category": "自然语言入参",
+    "subcategory": "客户风险分类query_description被写成自然语言",
+    "fixed_turns": [
+      "查一下宁德时代的客户风险分类"
+    ],
+    "pass_criteria": [
+      "tool_calls 的 query_intent 为客户风险分类",
+      "tool_calls 的 query_description 应为标准格式 ##空##宁德时代##空##",
+      "query_description 不应是自然语言整句（如含'查一下'、'风险分类'等描述性文字）",
+      "未因 query_description 格式错误导致 call_versatile 调用失败或返回解析异常"
+    ],
+    "expected_badcase": "agent 未按 SKILL.md 拼装 ## 分隔结构，将自然语言整句作为 query_description 传入，导致后端归一化脚本无法解析 area_code/customer_name/ref_url"
+  }
+]

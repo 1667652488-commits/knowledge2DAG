@@ -1,0 +1,5 @@
+[
+  {"id":"new_BC13b","category":"数据透传-邮件总结原文","skill":"mail_send","fixed_turns":["对小米科技做客户分层分类和公司信贷123金融服务方案，完成后把完整报告发邮件到 manager@icbc.com.cn，发件人张三，发件机构北京分行","可以发了"],"expected_badcase":"发邮件 attachmentList 总结/改写原文,非发原文报告","note":"BC13 的单公司轻量变体"},
+  {"id":"new_BC026b","category":"职责边界越界","skill":"financial_report_identify","fixed_turns":["帮我分析小米科技值不值得投资，做一份投资价值评估报告"],"expected_badcase":"agent 接受投资价值评估框架(超信贷范围),未走 out_of_scope 拒答","note":"BC026 之外的越界变体(投资建议非信贷职责)"},
+  {"id":"new_INFO_BC37b","category":"报告期间矛盾","skill":"financial_report_identify","fixed_turns":["分析比亚迪2025年半年报的年度财务健康度"],"expected_badcase":"未识别半年报与年度财务健康度的报告期间矛盾,直接采信","note":"INFO_BC37 的期间矛盾变体(半年报≠年度)"}
+]

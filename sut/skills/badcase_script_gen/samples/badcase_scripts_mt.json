@@ -1,0 +1,151 @@
+[
+  {
+    "id": "mt_BC20",
+    "category": "多目标串行",
+    "subcategory": "批量风险筛查+汇总分级",
+    "fixed_turns": ["我这5家授信客户：小米、华为、蔚来、理想、小鹏，逐一做客户风险分类，最后告诉我哪几家是严重风险或较大风险"],
+    "pass_criteria": [
+      "对5家（小米/华为/蔚来/理想/小鹏）逐一调用客户风险分类，tool_calls 出现5次、customer_name 各家齐全",
+      "串行执行（前一家返回后再下一家），不并行、不把多家塞一次调用",
+      "完成后给出汇总：明确列出哪几家是严重/较大风险（report 或 final_answer 有分级归纳）",
+      "task_completed=true"
+    ],
+    "expected_badcase": "只做部分家（如只做小米1家）；多家塞进一次调用；做完不汇总分级；并行发起多个调用"
+  },
+  {
+    "id": "mt_BC21",
+    "category": "多目标串行",
+    "subcategory": "同业组合对比(多家×多skill)",
+    "fixed_turns": ["对比宁德时代、比亚迪、亿纬锂能三家的客户分层分类和单客户信用风险，做个同业对比"],
+    "pass_criteria": [
+      "对3家各做客户分层分类 + 单客户信用风险分析，共6次call_versatile、3家customer_name齐全",
+      "串行不并行、不混为一次",
+      "完成后做同业对比（report/final_answer 有横向对比内容）",
+      "未误调集团信用风险（这三家是单一客户对比）"
+    ],
+    "expected_badcase": "只做1-2家；漏掉分层或风险某个skill；3家塞一次调用；客户名串错；不做对比"
+  },
+  {
+    "id": "mt_BC22",
+    "category": "多目标串行",
+    "subcategory": "大额对公批量123(多家×四步)",
+    "fixed_turns": ["对这3家做大额对公综合分析：小米、华为、蔚来，每家都要完整4步（基础信息、综合分析、金融服务方案、尽调要点）"],
+    "pass_criteria": [
+      "对3家各走完123的A→B→D→E四步，共12次call_versatile，3家齐全",
+      "每家B/D/E的query_description含该家步骤A返回的baseInfo（baseinfo_passthrough）",
+      "串行：一家四步跑完再下一家，不跨家混步、不并行",
+      "未跳步（不单调D）、task_completed=true"
+    ],
+    "expected_badcase": "只做1家（如只小米）；跳步漏E；跨家混步（小米A→华为A→小米B…）；3家塞一次；并行"
+  },
+  {
+    "id": "mt_BC23",
+    "category": "多目标串行",
+    "subcategory": "条件分支差异化跟进(多家+双分支)",
+    "fixed_turns": ["对A公司、B公司、C公司三家做客户分层分类，其中优质类的查近一个月负面舆情，预警类的查单客户信用风险"],
+    "pass_criteria": [
+      "先对3家各做客户分层分类（3次）",
+      "按各家分层结果分流：优质类→负面舆情分析，预警类→单客户信用风险分析（不查错的skill）",
+      "未对三家都查同一种（不分流）；近一月舆情有execute_cmd取日期",
+      "串行不并行"
+    ],
+    "expected_badcase": "不看分层结果对三家都查舆情或都查风险；查错skill；漏掉某家；并行"
+  },
+  {
+    "id": "mt_BC24",
+    "category": "多目标串行",
+    "subcategory": "跨skill多客户混合+HITL交织",
+    "fixed_turns": ["查华为的客户分层分类，再查小米近半年负面舆情，最后分析蔚来2025年年报的财务健康度"],
+    "pass_criteria": [
+      "3家3个不同skill逐一：华为分层、小米负面舆情、蔚来财报识别，不混为一次、客户名不串",
+      "小米舆情近半年需execute_cmd取日期换算start_time",
+      "蔚来财报缺attachment_id处应ask_user索要附件（HITL正确穿插在多目标中）",
+      "未把3家塞一次调用、未漏某个skill"
+    ],
+    "expected_badcase": "3家塞一次调用；客户名串错（如华为的舆情）；漏某个skill；蔚来缺附件却不ask_user直接编造或跳过"
+  },
+  {
+    "id": "mt_BC25",
+    "category": "多目标串行",
+    "subcategory": "动态追加客户",
+    "fixed_turns": ["分析小米、华为两家的客户分层分类", "再加个蔚来一起分析"],
+    "pass_criteria": [
+      "turn1对小米、华为各做客户分层分类（2次）",
+      "turn2增量补做蔚来分层（不重做已做的小米/华为）",
+      "最终3家分层都完成、task_completed=true",
+      "turn2不重复调小米/华为"
+    ],
+    "expected_badcase": "turn2不补蔚来；turn2把小米华为重做一遍；漏掉蔚来；三家塞一次"
+  },
+  {
+    "id": "mt_BC26",
+    "category": "意图理解·模糊意图",
+    "subcategory": "客户分层vs客户风险分类(易混)",
+    "fixed_turns": ["看看宁德时代属于什么档次"],
+    "pass_criteria": [
+      "意图模糊：'档次'可能指客户分层（优质/潜在/预警）或客户风险分类（严重/较大/一般），agent应ask_user澄清要哪种分类",
+      "不应未确认就直接选一个skill执行",
+      "不应编造结论"
+    ],
+    "expected_badcase": "不澄清直接走了客户分层或客户风险分类（两个易混skill之一），未ask_user确认意图"
+  },
+  {
+    "id": "mt_BC27",
+    "category": "意图理解·模糊意图",
+    "subcategory": "负面舆情vs舆情快报(易混)",
+    "fixed_turns": ["查下小米的舆情"],
+    "pass_criteria": [
+      "意图模糊：'舆情'可能指实时负面舆情分析（需start_time）或预计算的舆情快报/分行快报，agent应ask_user澄清要哪种+时间范围",
+      "不应未确认直接选一个执行",
+      "若选负面舆情应追问start_time"
+    ],
+    "expected_badcase": "不澄清直接走负面舆情或舆情快报；选负面舆情却不追问start_time"
+  },
+  {
+    "id": "mt_BC28",
+    "category": "意图理解·模糊意图",
+    "subcategory": "单客户vs集团信用风险(易混)",
+    "fixed_turns": ["分析恒大集团的信用风险，顺带看看它旗下核心成员企业"],
+    "pass_criteria": [
+      "意图模糊：'集团+旗下成员'可能要集团客户信用风险分析（上溯成员，report_type=1）或对成员逐一单客户分析，agent应ask_user澄清范围",
+      "不应未确认就直接选单客户或集团之一执行",
+      "若选集团应report_type=1"
+    ],
+    "expected_badcase": "不澄清直接走单客户信用风险（report_type=2不上溯成员）或直接走集团，未ask_user确认"
+  },
+  {
+    "id": "mt_BC29",
+    "category": "意图理解·模糊意图",
+    "subcategory": "境内vs境外信贷知识问答(易混)",
+    "fixed_turns": ["查下跨境保函业务的信贷制度要求"],
+    "pass_criteria": [
+      "意图模糊：'跨境保函'可能涉及境内信贷制度（credit_knowledge）或境外子行/分行制度（overseas_credit_knowledge），agent应ask_user澄清是境内还是境外、哪个机构",
+      "不应未确认就直接选一个问答skill执行",
+      "两skill均需area_code，缺失应追问"
+    ],
+    "expected_badcase": "不澄清直接走境内或境外信贷知识问答；area_code缺失不追问"
+  },
+  {
+    "id": "mt_BC30",
+    "category": "意图理解·模糊意图",
+    "subcategory": "绿色信贷识别vs客户行业分类(易混)",
+    "fixed_turns": ["这家新能源企业算什么产业类别"],
+    "pass_criteria": [
+      "意图模糊：'产业类别'可能指绿色信贷识别（绿色产业目录归类，需尽调报告）或客户行业分类（GB/T4754国民经济行业分类），agent应ask_user澄清要哪种",
+      "不应未确认直接选一个执行",
+      "选绿色信贷应追问尽调报告附件"
+    ],
+    "expected_badcase": "不澄清直接走绿色信贷或行业分类；选绿色信贷却不追问尽调附件"
+  },
+  {
+    "id": "mt_BC31",
+    "category": "意图理解·模糊意图",
+    "subcategory": "系统操作问答vs信贷知识问答(易混)",
+    "fixed_turns": ["怎么办理小微企业贷款"],
+    "pass_criteria": [
+      "意图模糊：'怎么办理'可能要系统操作问答（功能入口/操作步骤）或信贷知识问答（准入政策/制度），agent应ask_user澄清要操作流程还是制度政策",
+      "不应未确认直接选一个执行"
+    ],
+    "expected_badcase": "不澄清直接走系统操作问答或信贷知识问答，未ask_user确认用户要的是操作步骤还是制度政策"
+  }
+]

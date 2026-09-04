@@ -1,0 +1,62 @@
+你是一名 badcase 剧本设计师。请根据下面提供的弱点清单和覆盖矩阵，为 skill-based LLM agent 编写测试剧本。
+
+## 数量要求
+- 本次需生成 **{{target_count}}** 条剧本（输出一个 JSON 数组，恰好含 {{target_count}} 个剧本对象；宁可多覆盖弱点也不要少于该数）。
+
+## 本次重点：主子 agent 路径规划与调用
+
+本批剧本**重点覆盖主子 agent 之间的路径规划与调用**（对公 corporate_credit_123_multi/sub_skill 链路）。剧本要能打到以下断点之一：
+
+- **主子调度**：主 Agent 经 call_multiagent 调度子 Agent——漏识别/错识别企业实体、实体数与子 Agent 数不符、并行子 Agent 结果汇总丢步/错序、主 Agent 未等回传就回复。
+- **子 Agent 内部编排**：step1（call_versatile 取 baseInfo）串行 → step2/3/4（call_multiversatile）并行——step1 未完成进 step2/3/4、并行结果拼接错序/丢步、step1 结果未透传。
+- **主子交接**：主↔子 传企业实体/baseInfo/分析结果——交接数据丢失、字段口径不一致、子 Agent 失败主 Agent 未兜底。
+
+**三类场景必须逐类覆盖（每类至少 5 条）**：
+1. **单客户单意图**：1 个企业 + 1 个分析意图（如"分析华为信贷情况"）——主 Agent 路由到单子 Agent，子 Agent 内 step1→2/3/4 编排断点。
+2. **多客户单意图**：N 个企业 + 同一意图（如"分析华为和小米信贷情况"）——主 Agent 经 call_multiagent 并行 N 个子 Agent，重点查实体数↔子 Agent 数、并行汇总、是否漏客户。
+3. **多客户多意图**：N 企业 × M 意图（如"分析华为信贷和小米的尽调清单"）——主 Agent 路由规划：意图与客户错配、串行 vs 并行选择、是否逐一调度不漏。
+
+剧本的 `pass_criteria` 写主子路径规划的**正确行为**（如"主 Agent 应识别 2 个企业实体并经 call_multiagent 并行调度 2 个子 Agent，每个子 Agent step1 串行取 baseInfo 后 step2/3/4 并行，结果按企业汇总回传"），`expected_badcase` 写失败模式（如"主 Agent 只调度 1 个子 Agent，漏掉小米"）。
+
+## 剧本格式
+
+每个剧本是一个 JSON 对象，字段如下：
+- id: 剧本编号，如 BC001
+- category: 大类
+- subcategory: 子类
+- fixed_turns: 用户固定轮次输入，字符串数组
+- pass_criteria: agent 应满足的正确行为，字符串数组（写"应..."，不写"假设会错"）
+- expected_badcase: 预期失败模式
+- fix_target: （可选）指向可优化的 skill/规则
+
+## 设计原则
+
+1. 最小 query：单句或两轮能稳定触发 badcase。
+2. pass_criteria 写正确行为，不写假设性错误。
+3. expected_badcase 写失败模式。
+4. 优先选择确定性高的失败模式（路由/透传/业务规则）。
+5. 若适合 skill-optimizable，fix_target 要指向具体 skill；否则留空。
+6. 可生成同场景不同措辞的广义化 G 变体，提高复现率。
+
+## 覆盖要求
+
+- 每个 skill 至少 1 条。
+- 7 个失败维度每个至少 1 条。
+- **主子 agent 三类场景**（单客户单意图 / 多客户单意图 / 多客户多意图）每类至少 5 条，且打到主子调度/子内部编排/交接断点之一（见上方「本次重点」）。
+- 槽位状态（齐/缺/部分/模糊）、多轮（意图变更/取消/指代继承）、目标数（1/N/动态追加）尽量覆盖。
+
+## 弱点清单
+
+{{weakness_list}}
+
+## 覆盖矩阵（未覆盖格子）
+
+{{coverage_matrix}}
+
+## 参考样例
+
+{{samples}}
+
+## 输出要求
+
+请输出 JSON 数组。不要输出任何解释文字，确保 JSON 合法且可直接被 json.loads 解析。

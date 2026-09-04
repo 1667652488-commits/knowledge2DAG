@@ -1,0 +1,16 @@
+# badcase_script_gen 配置(路径相对 bundle 根, 见 config.yaml)
+# llm 段不生效: 实际走 bundle 根 .env(LLM_MODE=openai, 百炼 glm-5.1) → common.llm_client
+llm:
+  mode: openai
+
+paths:
+  skill_root: "data/skills_cache"        # 扁平 <name>.md(对公 4 skill; 由 golden_gen --skill-source adapter 刷)
+  agent_rule: "AgentRule.md"            # bundle 根下(若无则 phase0 跳过 AgentRule 框架)
+  scenarios_dir: "data/skills_cache/scenarios"  # 对公主子场景规则 AgentRule_*.md(主调度/子Agent)
+  output_dir: "data/results"
+
+generation:
+  target_count: 20
+  batch_size: 10          # phase2 每批生成条数(一次生成超 max_tokens 截断时分批)
+  enable_generalization: true
+  output_filename: "badcase_scripts.json"

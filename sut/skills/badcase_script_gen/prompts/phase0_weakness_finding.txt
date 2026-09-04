@@ -1,0 +1,33 @@
+你是一名专门测试 skill-based LLM agent 的测试工程师。
+
+请阅读下面提供的 SKILL.md 和 AgentRule.md 原文，按以下 7 个维度提炼系统的弱点清单。
+每个弱点必须附带相关的原文片段（文件名 + 行号/段落），便于后续核验。
+
+## 弱点-finding 维度
+
+1. **HITL**：SKILL 中「必填槽位 + 缺失须 ask_user/禁止调用」的约束，agent 可能用 narration 文字冒充询问。
+2. **路由**：触发词覆盖不全、易混 skill 对、范围混淆（如集团 vs 单一客户）。
+3. **编排（本次重点：主子 agent 路径规划与调用）**：
+   - **主子调度**：主 Agent 识别企业实体后经 call_multiagent 调度子 Agent；多企业场景 N 个子 Agent 并行。弱点：主 Agent 漏识别/错识别企业实体、实体数与子 Agent 数不符、并行子 Agent 结果汇总丢步/错序、主 Agent 未等子 Agent 回传就回复。
+   - **子 Agent 内部编排**：step1（call_versatile 取 baseInfo）串行 → step2/3/4（call_multiversatile：综合分析/融资方案/尽调清单）并行。弱点：step1 未完成就进 step2/3/4（baseInfo 缺失）、并行结果拼接错序/丢步、step2/3/4 依赖 step1 结果但未透传。
+   - **主子交接断点**：主→子传企业实体/baseInfo；子→主回传分析结果。弱点：交接数据丢失、字段口径不一致、子 Agent 失败时主 Agent 未兜底/未告知用户。
+   - **三类场景逐类找弱点**：单客户单意图 / 多客户单意图 / 多客户多意图——如多客户多意图时主 Agent 路由规划是否逐一调度、是否漏客户、意图与客户错配、串行 vs 并行选择错误。
+4. **忠实性**：SKILL 要求「content/attachmentList 原样输出不得改」，agent 是否可能总结/篡改。
+5. **业务规则**：监管规则/业务常识中未被 SKILL 编码的红线（如流贷期限、规模额度、报告期间）。
+6. **上下文**：多轮指代、附件跨轮继承、意图变更、取消场景。
+7. **越界**：SKILL「不要用于」+ AgentRule 超范围处理，agent 是否正确拒答或转交。
+
+## 输出格式
+
+请以 JSON 数组输出，每个元素包含：
+- skill: 所属 skill 名（或 AgentRule）
+- dimension: 维度（HITL/路由/编排/忠实性/业务规则/上下文/越界）
+- weakness: 弱点描述，50 字以内
+- evidence: 相关原文片段
+- suggested_probe: 建议的测试探针（一句话 query 或场景）
+
+只输出 JSON，不要输出任何解释文字。
+
+## 输入文档
+
+{{documents}}

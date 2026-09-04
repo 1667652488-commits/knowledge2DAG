@@ -1,0 +1,17 @@
+# fault_localization 配置(路径相对 bundle 根)
+# 依赖: golden(失败+部分通过) + coldstart final_rules.json(含 skill_attribution + supporting_trajectories)
+#         + traces(按 conversation_id 关联, 供 LLM 兜底)
+# 通用: 不绑定任何具体 agent/业务, skill 清单与 AgentRule 职责均从运行时数据读取。
+llm:
+  mode: mock   # 端点统一在 bundle 根 config.yaml; 兜底才用 LLM, 多数 case 走 rule 反查不用 LLM
+
+paths:
+  golden: "data/golden/golden_output.jsonl"
+  rules: "data/runs/coldstart/merged/final_rules.json"   # cold-start 产出(含 skill_attribution.top3 + supporting_trajectories)
+  trace_dir: "data/traces"
+  skills_flat: "data/skills_flat"
+  output: "data/golden/golden_localized.jsonl"            # 新文件, 不改原 golden
+  report: "data/golden/localization_report.md"
+
+selection:
+  fail_results: ["失败", "部分通过"]   # 只定位这些 result 的 case; 通过的标 localization=null

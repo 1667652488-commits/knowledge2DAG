@@ -1,0 +1,25 @@
+# badcase_curation 配置(路径相对 bundle 根)
+# 依赖: golden(判 result+scenario) + cold-start final_rules.json(badcase 错误类型)
+llm:
+  mode: mock   # 端点统一在 bundle 根 config.yaml
+
+paths:
+  golden: "data/golden/golden_output.jsonl"
+  trace_dir: "data/traces"
+  rules: "data/runs/coldstart/merged/final_rules.json"   # cold-start phase6 产出(含 error_category + supporting_trajectories)
+  output_chosen_dir: "data/chosen"
+
+selection:
+  # badcase 池 = golden result ∈ 失败/部分通过; 按 cold-start error_category 分桶
+  # goodcase 池 = golden result = 通过; 按 scenario 分桶
+  # 每桶上限: 显式列 > _default(未列出/全新桶走它); 0 = 不选该桶
+  # 同桶多选时按 tool_call 数(复杂度)降序取前N; badcase 再过 LLM 核验(防假阳性), goodcase 不核验
+  badcase:
+    _default: 2
+    # "CAT005-失败原因信息篡改": 5
+    # "CAT001-请求不可处理时空响应或不告": 0   # 0 = 跳过该类
+  goodcase:
+    _default: 1
+    # "数据透传-baseInfo": 3
+  verify_badcase: true   # badcase 是否 LLM 核验(防假阳性); goodcase 永不核验
+  readme_name: "README.md"

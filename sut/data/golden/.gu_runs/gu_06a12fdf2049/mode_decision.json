@@ -1,0 +1,14 @@
+{
+  "run_id": "06a12fdf2049",
+  "mode": "flat",
+  "skill_count": 4,
+  "flat_threshold": 30,
+  "skill_names": [
+    "corporate_credit_123_multi_skill",
+    "corporate_credit_123_skill",
+    "corporate_credit_123_sub_skill",
+    "customer_confirm_skill"
+  ],
+  "trace_count": 100,
+  "batch_size": 10
+}

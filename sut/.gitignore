@@ -1,0 +1,12 @@
+# 环境变量(含 token, 不进库)
+.env
+# 备份
+*.bak
+# pyc
+__pycache__/
+*.pyc
+# 运行产出
+runs/
+data/md/
+data/chosen/
+data/rules_python/

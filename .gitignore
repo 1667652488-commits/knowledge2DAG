@@ -1,0 +1,23 @@
+# 密钥与本地配置（红线：永不入库）
+.env
+**/.env
+eval/eval_judge_config.json
+
+# 环境
+agent/.venv/
+sut/.venv/
+**/__pycache__/
+
+# 第三方快照（来源：sierra-research/tau-bench codeload main，2026-08-19；本地 patch 了 tau_bench/run.py 的 ckpt 文件名）
+agent/tau_bench/
+
+# 运行产物（数据量大，不进库；批次清单见 docs）
+runs/
+sut/runs/
+data/traces/
+scripts/logs/
+
+# 系统
+*.pyc
+.DS_Store
+Thumbs.db

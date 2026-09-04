@@ -1,0 +1,4 @@
+# intranet_bundle 依赖(离线安装见 install_offline.bat)
+# wheel 已打在 wheels/ 下(cp38/cp39/cp310 win_amd64)
+pyyaml>=6.0
+requests>=2.28

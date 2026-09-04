@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""
+llm_client.py —— LLM 网关, 端点来自 common.config。
+
+暴露 call_llm(messages, model=None, stream=False) -> str, 与 V3 工具现用签名兼容,
+V3 工具改一行 import 即可接入。失败时返回 "[LLM ...]" 串(供 json_utils.is_llm_error 识别),
+不抛异常打断调用方流程。明文 api_key 不进包, 仅 env。
+"""
+from __future__ import annotations
+
+import json
+import time
+from typing import Any, Dict, List
+
+import requests
+
+from .config import get_config
+
+
+def _log(msg: str) -> None:
+    # 静默; 需要调试可改写
+    pass
+
+
+# ── 调测开关 ────────────────────────────────────────────────
+# 开启后 IntranetClient 等会打印完整请求(URL/headers/body, token 脱敏)+ 原始响应。
+# 三种开法: 1) env LLM_DEBUG=1  2) config.yaml llm.debug: true  3) 代码 enable_debug()
+_DEBUG = False
+
+
+def enable_debug(on: bool = True) -> None:
+    """运行时打开/关闭 LLM 调测输出。"""
+    global _DEBUG
+    _DEBUG = on
+
+
+def _dbg(msg: str) -> None:
+    if _DEBUG:
+        print(msg, flush=True)
+
+
+def _mask_headers(headers: dict) -> dict:
+    """headers 里的 token/api_key 脱敏, 方便打印。"""
+    out = {}
+    for k, v in headers.items():
+        if k.lower() in ("token", "authorization", "api-key", "api_key"):
+            s = str(v)
+            out[k] = (s[:10] + "..." + s[-4:]) if len(s) > 16 else "***"
+        else:
+            out[k] = v
+    return out
+
+
+class LLMClient:
+    """LLM 客户端基类。"""
+
+    def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        raise NotImplementedError
+
+
+class OpenAICompatibleClient(LLMClient):
+    """OpenAI 兼容协议(requests 直连, 不依赖 openai SDK)。"""
+
+    def __init__(self, base_url: str, api_key: str, model: str,
+                 timeout: int, max_retries: int, retry_delay: float,
+                 temperature: float = 0.0):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self.temperature = temperature
+
+    def chat(self, messages: List[Dict[str, str]], model: str = None,
+             stream: bool = False, temperature: float = None,
+             max_tokens: int = None, **kwargs) -> str:
+        model = model or self.model
+        temp = temperature if temperature is not None else self.temperature
+        url = self.base_url + "/chat/completions"
+        payload: Dict[str, Any] = {"model": model, "messages": messages, "stream": stream}
+        if temp is not None:
+            payload["temperature"] = temp
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        t0 = time.time()
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                if stream:
+                    resp = requests.post(url, json=payload, headers=headers,
+                                         stream=True, timeout=self.timeout)
+                    resp.raise_for_status()
+                    texts = []
+                    for line in resp.iter_lines(decode_unicode=True):
+                        if not line or not line.startswith("data:"):
+                            continue
+                        content = line[5:].strip()
+                        if content == "[DONE]":
+                            break
+                        try:
+                            delta = (json.loads(content).get("choices", [{}])[0]
+                                     .get("delta", {}).get("content", ""))
+                            if delta:
+                                texts.append(delta)
+                        except Exception:
+                            pass
+                    return "".join(texts).strip()
+
+                resp = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
+                resp.raise_for_status()
+                result = resp.json()
+                choices = result.get("choices", [])
+                if choices:
+                    out = choices[0].get("message", {}).get("content", "").strip()
+                    _log(f"LLM ok model={model} out_len={len(out)} t={time.time()-t0:.1f}s")
+                    return out
+                return ""
+            except requests.exceptions.Timeout:
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+                continue
+            except Exception as exc:
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+                    continue
+                return f"[LLM 调用错误: {type(exc).__name__}: {exc}]"
+        return f"[LLM 调用超时: 服务器在 {self.timeout}s 内未响应]"
+
+
+class IntranetClient(LLMClient):
+    """内网 AIGC LLM(OpenAI 兼容形, 流式, token + userId header 鉴权)。
+
+    请求: POST {base_url}  headers: {token, userId, Content-Type}
+          body: {messages, stream:"true"}  (messages 原样透传; 流式)
+    响应: SSE(data: {chunk} 逐块, 取 choices[0].delta.content 累积, [DONE] 结束);
+          兜底单 JSON: choices[0].message.content / result.finalAnswer / content。
+    token 从 env LLM_TOKEN/LLM_API_KEY 读; userId 从 config 读。
+    """
+
+    def __init__(self, base_url: str, token: str, user_id: str,
+                 timeout: int, max_retries: int, retry_delay: float, **_):
+        self.base_url = base_url
+        self.token = token
+        self.user_id = user_id
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+
+    def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        if not messages:
+            return ""
+        headers = {"Content-Type": "application/json",
+                   "token": self.token, "userId": self.user_id}
+        # 内网 LLM 流式输出: stream="true"(匹配 curl), 响应是 SSE(data: {chunk} 逐块)
+        body = {"messages": messages, "stream": "true"}
+
+        t0 = time.time()
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                _dbg(f"[LLM-DBG] attempt {attempt} POST {self.base_url}")
+                _dbg(f"[LLM-DBG] headers={_mask_headers(headers)}")
+                _dbg(f"[LLM-DBG] body={body}")
+                resp = requests.post(self.base_url, json=body, headers=headers,
+                                     timeout=self.timeout, stream=True)
+                resp.raise_for_status()
+                # 收全部行(SSE 多行 / 单 JSON 都能处理)
+                lines = []
+                for line in resp.iter_lines(decode_unicode=True):
+                    if line:
+                        lines.append(line)
+                _dbg(f"[LLM-DBG] 响应共 {len(lines)} 行, 原始前 20 行:")
+                for ln in lines[:20]:
+                    _dbg(f"[LLM-DBG]   {ln[:500]}")
+                # SSE: 含 data: 行 → 累积 choices[0].delta.content
+                if any(ln.startswith("data:") for ln in lines):
+                    out = []
+                    for ln in lines:
+                        if not ln.startswith("data:"):
+                            continue
+                        payload = ln[5:].strip()
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(payload)
+                            delta = (chunk.get("choices", [{}])[0]
+                                     .get("delta", {}) or {}).get("content", "")
+                            if delta:
+                                out.append(delta)
+                        except Exception:
+                            pass
+                    text = "".join(out).strip()
+                    if text:
+                        _log(f"IntranetLLM stream ok out_len={len(text)} t={time.time()-t0:.1f}s")
+                        return text
+                    # SSE 但没拿到 content, 落到下面兜底
+                # 单 JSON(非流式或 SSE 无 content)
+                try:
+                    data = json.loads("\n".join(lines))
+                except Exception:
+                    data = {}
+                choices = data.get("choices") or []
+                if choices:
+                    out = str(choices[0].get("message", {}).get("content", "")).strip()
+                    if out:
+                        return out
+                r = data.get("result")
+                if isinstance(r, dict):
+                    out = str(r.get("finalAnswer") or r.get("content") or "").strip()
+                    if out:
+                        return out
+                if data.get("content"):
+                    return str(data["content"]).strip()
+                code = data.get("code")
+                if code not in (None, "0", 0):
+                    msg = data.get("msg", "")
+                    if attempt < self.max_retries:
+                        time.sleep(self.retry_delay * attempt)
+                        continue
+                    return f"[LLM 内网业务失败: code={code} msg={msg}]"
+                return ""
+            except requests.exceptions.Timeout:
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+                continue
+            except Exception as exc:
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+                    continue
+                return f"[LLM 调用错误: {type(exc).__name__}: {exc}]"
+        return f"[LLM 调用超时: 服务器在 {self.timeout}s 内未响应]"
+
+
+class MockClient(LLMClient):
+    """冒烟用: 按 messages 末尾关键词返回合法 JSON, 便于流程贯通。"""
+    def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        last = ""
+        for m in messages:
+            if m.get("role") == "user":
+                last = m.get("content", "")
+        # 根据 prompt 内容粗略返回结构化占位
+        if "弱点" in last or "weakness" in last.lower():
+            return '[{"skill":"customer_tiering","dimension":"路由","weakness":"mock弱点","scenario":"mock场景"}]'
+        if "剧本" in last or "script" in last.lower():
+            return '[{"script_id":"MOCK01","category":"mock","fixed_turns":["mock对话"]}]'
+        if "expected_behavior" in last or "判定" in last:
+            return '{"result":"通过","expected_behavior":"在mock情况下应该mock","reason":"mock"}'
+        if "verdict" in last.lower() or "核验" in last:
+            return '{"verdict":"true_badcase","basis":"mock","confidence":0.9}'
+        return '{"mock": true}'
+
+
+_client: LLMClient | None = None
+
+
+def get_client() -> LLMClient:
+    global _client
+    if _client is None:
+        cfg = get_config().llm
+        # 调测开关: env LLM_DEBUG=1 / config llm.debug
+        enable_debug(bool(cfg.debug))
+        if cfg.mode == "mock":
+            _client = MockClient()
+        elif cfg.mode == "intranet":
+            _client = IntranetClient(
+                base_url=cfg.base_url, token=cfg.api_key, user_id=cfg.user_id,
+                timeout=cfg.timeout, max_retries=cfg.max_retries,
+                retry_delay=cfg.retry_delay, session_id=cfg.session_id,
+            )
+        else:
+            _client = OpenAICompatibleClient(
+                base_url=cfg.base_url, api_key=cfg.api_key, model=cfg.model,
+                timeout=cfg.timeout, max_retries=cfg.max_retries,
+                retry_delay=cfg.retry_delay, temperature=cfg.temperature,
+            )
+    return _client
+
+
+def reset_client() -> None:
+    global _client
+    _client = None
+
+
+def call_llm(messages: list, model: str = None, stream: bool = False,
+             temperature: float = None, **kwargs) -> str:
+    """兼容 V3 的统一入口: 返回字符串, 失败返回 [LLM ...] 串。"""
+    return get_client().chat(messages, model=model, stream=stream,
+                             temperature=temperature, **kwargs)

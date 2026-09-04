@@ -1,0 +1,101 @@
+[
+  {
+    "id": "CTX_BC32",
+    "category": "上下文继承与参数错位",
+    "subcategory": "指代客户名跨skill错位",
+    "fixed_turns": [
+      "查小米的客户分层",
+      "再查它的客户风险分类"
+    ],
+    "pass_criteria": [
+      "第二轮'它'正确指代小米，未再次 ask_user 索要客户名",
+      "第二轮 tool_calls 的 query_intent 为客户风险分类",
+      "第二轮 tool_calls 的 query_description 中 customer_name 含'小米'",
+      "未将'它'错当成新实体或空实体"
+    ],
+    "expected_badcase": "上下文丢失，第二轮追问'它'指哪家；把'它'错当成新实体；客户名错位导致风险分类对象错误"
+  },
+  {
+    "id": "CTX_BC33",
+    "category": "上下文继承与参数错位",
+    "subcategory": "附件跨轮继承错误",
+    "fixed_turns": [
+      "分析比亚迪2025年报的财务健康度，附件 att_001",
+      "再用同一份附件分析宁德时代的财务健康度"
+    ],
+    "pass_criteria": [
+      "第二轮 tool_calls 的 query_intent 为财报智能识别",
+      "第二轮 tool_calls 的 query_description 中客户名应为宁德时代（而非比亚迪）",
+      "第二轮 tool_calls 的 query_description 仍包含附件 att_001",
+      "未把比亚迪当成第二轮客户调用，也未丢失 att_001 重新索要附件"
+    ],
+    "expected_badcase": "第二轮仍用比亚迪调用；丢失 att_001 又追问附件；未识别客户从比亚迪换成宁德时代"
+  },
+  {
+    "id": "CTX_BC34",
+    "category": "上下文继承与参数错位",
+    "subcategory": "同一客户跨skill上下文丢失",
+    "fixed_turns": [
+      "分析宁德时代的客户行业分类",
+      "再分析它的客户分层分类"
+    ],
+    "pass_criteria": [
+      "第二轮'它'正确指代宁德时代，未再次 ask_user 索要客户名",
+      "第二轮 tool_calls 的 query_intent 为客户分层分类",
+      "第二轮 tool_calls 的 query_description 中 customer_name 含'宁德时代'",
+      "未将'它'错当成新实体，也未把 intent 走错"
+    ],
+    "expected_badcase": "上下文丢失，第二轮追问客户名；把'它'当成新客户创建新对话；intent 错配（如仍走行业分类）"
+  },
+  {
+    "id": "INFO_BC35",
+    "category": "业务规则冲突/监管违规未识别",
+    "subcategory": "流贷期限与产品类型冲突(监管违规)",
+    "fixed_turns": [
+      "给宁德时代做流动资金贷款，期限10年"
+    ],
+    "pass_criteria": [
+      "agent/skill 识别到'流动资金贷款期限10年'违反流贷期限监管规则（流贷期限一般≤1年、最长不超过3年，10年期限属项目贷款/固定资产贷款性质，非流贷）",
+      "对冲突给出风险提示或拒答或 ask_user 确认产品类型/期限（任一即可），不得直接绿色放行",
+      "未直接调用 call_versatile 生成10年期流动资金贷款金融服务方案",
+      "合规审查不应输出'合规/无风险'等绿灯结论，应将期限违规列为合规风险点",
+      "未在 final_answer 中编造'10年流贷合规'等结论"
+    ],
+    "expected_badcase": "未识别流贷期限监管冲突，直接生成10年期流贷金融服务方案且合规审查绿灯放行（task_completed）；编造10年流贷合规结论",
+    "fix_target": "compliance_review_skill 应编码流贷期限上限监管规则，或前置产品-期限匹配校验；123 金融服务方案生成前应拦截明显违规期限"
+  },
+  {
+    "id": "INFO_BC36",
+    "category": "业务规则冲突/监管违规未识别",
+    "subcategory": "客户规模与授信额度冲突(业务常识)",
+    "fixed_turns": [
+      "给这家小微企业做100亿元的固定资产贷款"
+    ],
+    "pass_criteria": [
+      "agent/skill 识别到'小微企业'与'100亿元额度'明显不匹配（小微额度量级远低于100亿，业务常识级异常）",
+      "对冲突给出风险提示或拒答或 ask_user 确认客户规模/额度（任一即可），不得直接执行或转移焦点回避",
+      "未直接调用 call_versatile 按100亿元小微企业固定资产贷款执行",
+      "未编造'小微企业可贷100亿'等结论；不应在 think 识别到异常后主动放弃（如'不该 judge 业务可行性'）而回避",
+      "customer_name 缺失（'这家小微企业'无名）时若 ask_user 索要客户名，须走真实 ask_user 工具而非 final_answer 文字带过"
+    ],
+    "expected_badcase": "think 识别到规模-额度异常却主动放弃不处理、转移焦点问客户名；未识别冲突直接执行；编造小微可贷100亿；缺客户名用 final_answer 文字带过未真调 ask_user",
+    "fix_target": "agent 应对规模-额度/客户分类-额度等业务常识级异常主动风险提示；相关 skill 应编码额度-客户规模合理性校验"
+  },
+  {
+    "id": "INFO_BC37",
+    "category": "业务规则冲突/监管违规未识别",
+    "subcategory": "报告期间与报告类型冲突(业务常识)",
+    "fixed_turns": [
+      "分析宁德时代2025年一季报的年度财务健康度"
+    ],
+    "pass_criteria": [
+      "agent/skill 识别到'2025一季报'与'年度财务健康度'在报告期间上存在矛盾（一季报≠年度报告）",
+      "对冲突给出风险提示或 ask_user 确认分析对象（一季报/年报/半年报，任一即可），不得直接采信 report_period=一季度照走",
+      "未直接调用 call_versatile 把一季报当年度报分析",
+      "未编造'一季报即年度财务健康度'等结论",
+      "attachment_id 缺失时若索要附件，须走真实 ask_user 工具而非 final_answer 文字带过（此为独立于冲突识别的缺槽位问题）"
+    ],
+    "expected_badcase": "未识别报告期间矛盾，直接采信 report_period=一季度当年度分析；编造结论混淆报告期间；缺 attachment_id 用 final_answer 文字带过未真调 ask_user",
+    "fix_target": "financial_report_identify_skill 应校验报告期间与分析类型匹配；agent 应对'一季报+年度分析'这类期间矛盾主动提示"
+  }
+]

@@ -1,0 +1,35 @@
+你是一名 agent 缺陷定位工程师。给定一条失败/部分通过的 golden case, 请定位**根因该改哪个 skill**, 如果是 AgentRule(全局路由/编排/能力边界/越界/忠实性)问题, 还要给出"除 AgentRule 外首个应改的 skill"。
+
+## 背景
+- AgentRule = 根级全局规则(路由选 skill、越界拒答、编排流程、忠实性核验)。
+- skill 清单(只能从这些里选, 或选 AgentRule):
+{{skill_list}}
+
+## AgentRule 职责摘要(来自该 agent 的实际规则文档)
+{{agent_rule_desc}}
+
+## 待定位 case
+- 用户输入:
+{{inputs}}
+
+- 期望行为(expected_behavior):
+{{expected_behavior}}
+
+- 判定理由(reason):
+{{reason}}
+
+## 实际轨迹
+{{trajectory}}
+
+## 任务
+判断这一条没过, 根因最该改的是哪个 skill 还是 AgentRule:
+- 若是某具体 skill 内部逻辑/参数/触发不对 → attributed_to = 该 skill 名(从上面清单选), is_agentrule=false, secondary_skill 留空。
+- 若是路由错/该调没调/越界没拒答/编排流程错/能力边界没识别 → attributed_to = "AgentRule", is_agentrule=true, 并在 secondary_skill 给出"除 AgentRule 外首个应改的 skill"(被错误调用或本应调用的那个; 从清单选, 没有则留空)。
+
+只输出一个 JSON, 不要解释:
+{
+  "attributed_to": "<skill 名 或 AgentRule>",
+  "is_agentrule": true/false,
+  "secondary_skill": "<skill 名 或 空字符串>",
+  "reason": "<一句话: 为何归到这里>"
+}

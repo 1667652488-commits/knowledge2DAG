@@ -1,0 +1,40 @@
+# intranet_bundle 单点配置 —— 所有端点/路径在此, 改这里不改代码
+# env 覆盖(优先): LLM_MODE / LLM_TOKEN / LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
+#                 AGENT_BASE_URL / AGENT_NAME
+# token 也可放 bundle 根 .env 文件(自动加载, 见 .env.example)
+
+llm:
+  # mode:
+  #   mock      流程冒烟(进程内, 不联网)
+  #   openai    OpenAI 兼容(/v1/chat/completions, Authorization: Bearer)
+  #   intranet  内网 AIGC LLM(POST base_url, token+userId header, {messages,stream}, 取 choices[0].message.content)
+  mode: mock
+  base_url: "http://aigc.sdc.cs.icbc/mlpmodelservice/aigc/chat/completions"  # intranet: 完整 URL
+  api_key: ""              # openai: api_key; intranet: token(JWT), 优先 env LLM_TOKEN 或 .env; 明文不进包
+  model: "qwen-72b"        # intranet 不用(body 无 model), 仅 openai 模式
+  temperature: 0.0         # intranet 不支持, 仅 openai
+  timeout: 150             # 内网 LLM 可能慢, 建议 300
+  max_retries: 4
+  retry_delay: 2.0
+  user_id: "901177633"           # intranet: userId(header)
+  session_id: ""                 # intranet 此接口不用(留空)
+  debug: false                   # true=打印请求(URL/headers/body,token脱敏)+原始响应; 或 env LLM_DEBUG=1
+
+agent:
+  base_url: "http://localhost:18091"   # adapter 地址, env AGENT_BASE_URL 优先
+  agent_name: "edp_agent"              # env AGENT_NAME 优先
+  timeout_invoke: 600
+  timeout_read: 30
+  timeout_skill: 30
+  trace_wait: 1.0                      # invoke 后等几秒再取 cleaned-traces
+  jiuwenbox_url: "http://124.71.234.237:8321"  # skill 沙箱后端, env JIUWENBOX_URL 优先; adapter skill_list 堵死时本地回退(读双 sandbox 校验一致)
+
+paths:
+  # 均相对 bundle 根, 不再硬编码绝对路径
+  root: "."
+  runs: "runs"
+  traces: "data/traces"
+  golden: "data/golden"
+  skills_flat: "data/skills_flat"
+  results: "data/results"              # batch_runner 跑批产出
+  chosen: "data/chosen"                # curation 精选产出

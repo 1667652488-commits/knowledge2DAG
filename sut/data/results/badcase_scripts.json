@@ -1,0 +1,1526 @@
+[
+  {
+    "id": "BC001",
+    "category": "单客户单意图",
+    "subcategory": "单企分流逻辑与强约束矛盾",
+    "fixed_turns": [
+      "请对华为进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应识别1个企业实体'华为'并经call_multiagent调度1个子Agent",
+      "子Agent内部应先串行执行step1获取baseInfo，再并行执行step2/3/4",
+      "主Agent应等待子Agent回传结果后再回复，不得绕过子Agent直接执行"
+    ],
+    "expected_badcase": "主Agent判断单企业直接执行，未走call_multiagent调度子Agent，导致编排错乱或直接调用call_versatile",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC002",
+    "category": "单客户单意图",
+    "subcategory": "子Agent内部step1空值未阻断",
+    "fixed_turns": [
+      "分析一下腾讯的信贷123情况，但假设基础信息查询接口异常返回空"
+    ],
+    "pass_criteria": [
+      "子Agent应先串行执行step1(call_versatile)获取baseInfo",
+      "若step1返回空或异常，子Agent应中止后续步骤并回传失败信息给主Agent",
+      "主Agent应兜底提示用户基础信息获取失败，不可继续执行step2/3/4"
+    ],
+    "expected_badcase": "子Agent在step1返回空baseInfo时，仍带空值并行执行step2/3/4，导致后续分析结果全错或空指针异常",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC003",
+    "category": "单客户单意图",
+    "subcategory": "监管红线违规方案生成",
+    "fixed_turns": [
+      "对这家小企业做信贷123分析，并帮我设计一个5年期的流动资金贷款方案"
+    ],
+    "pass_criteria": [
+      "子Agent应完成step1-4的信贷123分析",
+      "主Agent在输出结果时，必须明确提示'本Skill仅辅助企业信贷分析判断，不替代最终授信决策'",
+      "主Agent不得直接输出5年期流贷的具体授信方案，应拒绝超越辅助分析边界的请求"
+    ],
+    "expected_badcase": "主Agent直接生成了5年期流动资金贷款的违规方案，未提示不替代最终授信决策的免责声明，违反业务规则",
+    "fix_target": "corporate_credit_123_skill"
+  },
+  {
+    "id": "BC004",
+    "category": "多客户单意图",
+    "subcategory": "实体数与子Agent数不符漏客户",
+    "fixed_turns": [
+      "分析腾讯和阿里两家公司的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体(腾讯、阿里)",
+      "主Agent应经call_multiagent并行调度2个子Agent，每个子Agent对应1个企业",
+      "主Agent应等待2个子Agent全部回传后，按企业汇总结果再回复"
+    ],
+    "expected_badcase": "主Agent只调度1个子Agent(漏掉阿里)，或将两家公司塞入同一个子Agent的query导致解析失败",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC005",
+    "category": "多客户单意图",
+    "subcategory": "主子交接entity_id字段口径冲突",
+    "fixed_turns": [
+      "帮我做一下字节跳动和美团的企业信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent在调度子Agent时，应传递正确的企业实体标识",
+      "若子Agent要求唯一数字ID(如entity_001)，主Agent应通过交接映射或查询获取正确ID，而非固定填占位符entity_auto",
+      "主Agent应确保两家公司的ID不混淆"
+    ],
+    "expected_badcase": "主Agent在call_multiagent时固定填占位符entity_auto，导致子Agent无法获取baseInfo而失败，或两家公司ID错位导致分析结果互换",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC006",
+    "category": "多客户单意图",
+    "subcategory": "并行结果汇总错序丢步",
+    "fixed_turns": [
+      "对比分析一下宁德时代和比亚迪的信贷123信息"
+    ],
+    "pass_criteria": [
+      "主Agent应并行调度2个子Agent分别处理宁德时代和比亚迪",
+      "主Agent应等待两个子Agent均返回成功后，将结果按企业维度正确归类汇总",
+      "汇总时不得丢失任一企业的step2/3/4任一步骤结果，不得对长文本进行截断概括"
+    ],
+    "expected_badcase": "主Agent未等回传就回复，或汇总时将宁德时代的分析结果错归给比亚迪，或丢失某一家企业的尽调要点(step4)结果",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC007",
+    "category": "多客户多意图",
+    "subcategory": "差异化意图query固定拼接错配",
+    "fixed_turns": [
+      "分析A公司和B公司，A公司做信贷123分析，B公司只做尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体和2个差异化意图",
+      "主Agent应为A公司调度执行完整step1-4的子Agent",
+      "主Agent应为B公司调度仅执行step1和step4的子Agent(或对应尽调意图的Agent)",
+      "不得将B公司的意图错配为信贷123全量分析"
+    ],
+    "expected_badcase": "主Agent将固定query'对{企业名称}进行公司信贷123信息提取'套用给B公司，导致B公司也做了全量分析，意图与客户错配",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC008",
+    "category": "多客户多意图",
+    "subcategory": "子Agent失败主Agent违规回退重试",
+    "fixed_turns": [
+      "对C公司做信贷123分析，对D公司做尽调清单，如果D公司分析失败不要用其他方式重试"
+    ],
+    "pass_criteria": [
+      "主Agent应分别调度C公司和D公司的子Agent",
+      "若D公司子Agent返回失败，主Agent应兜底提示D公司分析失败，并正常返回C公司的成功结果",
+      "主Agent严禁在子Agent失败时违规回退调用call_versatile重试"
+    ],
+    "expected_badcase": "D公司子Agent失败后，主Agent违规调用call_versatile尝试单独执行D公司分析，违反核心规则5",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC009",
+    "category": "多客户多意图",
+    "subcategory": "附件跨轮上下文丢失与错传",
+    "fixed_turns": [
+      "上传了A公司的财报附件att_002",
+      "基于刚才的附件，对A公司和B公司做信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应为A公司和B公司分别调度子Agent",
+      "A公司的子Agent在step1及后续步骤中应透传附件att_002",
+      "B公司的子Agent不应使用A公司的附件，应独立获取B公司信息",
+      "主Agent应正确继承第一轮的附件上下文给A公司"
+    ],
+    "expected_badcase": "主Agent丢失第一轮的附件上下文，A公司子Agent未收到att_002；或错误地将A公司的附件att_002透传给B公司的子Agent",
+    "fix_target": "corporate_credit_123_skill / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC010",
+    "category": "多客户多意图",
+    "subcategory": "越界路由与HITL工具调用违规",
+    "fixed_turns": [
+      "帮我分析一下张三个人的信用评分，还有小米公司的信贷123情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别'张三'为个人信贷意图，属于越界场景，应明确拒绝或提示不支持",
+      "主Agent应识别'小米公司'为企业信贷123意图，正确调度子Agent",
+      "对于'小米'若名称模糊，主Agent必须调用ask_user工具确认，不得用自然语言冒充询问"
+    ],
+    "expected_badcase": "主Agent将张三个人信贷也路由至corporate_credit_123_skill执行；或在确认小米全称时，未调用ask_user工具，而是直接用自然语言输出'请问小米的全称是什么？'",
+    "fix_target": "customer_confirm_skill / corporate_credit_123_skill"
+  },
+  {
+    "id": "BC011",
+    "category": "单客户单意图",
+    "subcategory": "子Agent内部编排断点",
+    "fixed_turns": [
+      "请对腾讯进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应识别1个企业实体并经call_multiagent调度1个子Agent",
+      "子Agent应严格串行执行step1（call_versatile取baseInfo）",
+      "若step1返回status=success但baseInfo为空，子Agent应终止流程并返回空值异常，不得进入step2/3/4",
+      "主Agent应等待子Agent回传后再回复用户"
+    ],
+    "expected_badcase": "子Agent step1返回空baseInfo后，仍带空值继续并行执行step2/3/4，导致后续分析全空或报错；主Agent未等回传就提前回复",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC012",
+    "category": "多客户单意图",
+    "subcategory": "主子调度实体数与口径冲突",
+    "fixed_turns": [
+      "分析腾讯和阿里两家公司的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体并经call_multiagent并行调度2个子Agent",
+      "主Agent向子Agent传递entity_id时应使用唯一数字ID格式（如entity_001），不使用占位符entity_auto",
+      "主Agent应等待2个子Agent均回传后，按企业汇总结果返回"
+    ],
+    "expected_badcase": "主Agent传递占位符entity_auto导致子Agent无法解析实体；主Agent只调度1个子Agent漏掉阿里；主Agent未等回传就回复",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC013",
+    "category": "多客户多意图",
+    "subcategory": "差异化意图调度与query拼接",
+    "fixed_turns": [
+      "分析A公司和B公司，A做信贷123分析，B公司只做尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体及2个不同意图",
+      "主Agent应为A公司调度完整信贷123子Agent，为B公司调度仅含尽调清单的子Agent或意图",
+      "传给子Agent的query应根据意图差异化构建，不将B公司强制拼接为'对公司B进行公司信贷123信息提取'"
+    ],
+    "expected_badcase": "主Agent固定拼接query，导致B公司也走完整信贷123流程；意图与客户错配，把A的信贷意图安在B上",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC014",
+    "category": "单客户单意图",
+    "subcategory": "单企业路由与分流逻辑错乱",
+    "fixed_turns": [
+      "请对华为进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应将单企业信贷123请求路由至corporate_credit_123_multi_skill",
+      "主Agent应遵循强约束，即使是单实体也经call_multiagent调度子Agent执行，不直接执行",
+      "子Agent内部应完成step1串行到step2/3/4并行的完整编排"
+    ],
+    "expected_badcase": "主Agent将请求错误路由至corporate_credit_123_skill直接执行；或主Agent在multi_skill中违反强约束，单企业直接执行而不调度子Agent",
+    "fix_target": "corporate_credit_123_multi_skill / corporate_credit_123_skill"
+  },
+  {
+    "id": "BC015",
+    "category": "多客户单意图",
+    "subcategory": "子Agent失败主Agent兜底",
+    "fixed_turns": [
+      "分析字节跳动和美团的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体并经call_multiagent并行调度2个子Agent",
+      "若某子Agent（如字节跳动）执行失败，主Agent应成功兜底，返回部分成功结果（美团）及失败提示（字节跳动）",
+      "主Agent严禁在子Agent失败时违规回退调用call_versatile重试"
+    ],
+    "expected_badcase": "子Agent失败时，主Agent违规调用call_versatile尝试单独执行；主Agent未兜底导致整体报错无输出；主Agent汇总时丢失成功的那家结果",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC016",
+    "category": "单客户单意图",
+    "subcategory": "子Agent内部baseInfo透传",
+    "fixed_turns": [
+      "分析大疆公司的信贷123情况"
+    ],
+    "pass_criteria": [
+      "主Agent应调度1个子Agent",
+      "子Agent step1获取baseInfo后，必须将完整的baseInfo透传给step2/3/4作为输入参数",
+      "step2/3/4并行执行后，结果应按顺序拼接返回给主Agent"
+    ],
+    "expected_badcase": "子Agent step1结果未透传，导致step2/3/4缺少baseInfo执行失败；或并行结果拼接错序、丢步",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC017",
+    "category": "多客户多意图",
+    "subcategory": "越界意图识别与路由拦截",
+    "fixed_turns": [
+      "分析A公司的信贷123情况，以及B公司的个人信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应为A公司调度信贷123子Agent",
+      "主Agent应识别B公司的个人信贷为越界意图，拒绝调度子Agent并提示本系统不支持个人信贷",
+      "主Agent不应将B公司路由至corporate_credit_123_multi_skill执行"
+    ],
+    "expected_badcase": "主Agent将B公司的个人信贷意图也路由至对公信贷子Agent执行，导致越界；或因B意图越界直接中断A公司的正常调度",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC018",
+    "category": "单客户单意图",
+    "subcategory": "模糊实体HITL确认",
+    "fixed_turns": [
+      "帮我分析一下小米的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent识别到企业实体模糊（小米），应调用ask_user工具向用户确认完整全称",
+      "用户确认后，主Agent将确认后的全称作为实体调度子Agent",
+      "主Agent不得用自然语言冒充ask_user询问，也不得直接用'小米'调度"
+    ],
+    "expected_badcase": "主Agent用自然语言直接询问而不调用ask_user工具；或未确认直接用'小米'调度子Agent导致实体识别错误",
+    "fix_target": "customer_confirm_skill"
+  },
+  {
+    "id": "BC019",
+    "category": "多客户单意图",
+    "subcategory": "并行汇总忠实性与完整性",
+    "fixed_turns": [
+      "分析国家电网和中国石油的信贷123情况"
+    ],
+    "pass_criteria": [
+      "主Agent应并行调度2个子Agent",
+      "主Agent应等待2个子Agent全部回传后，按企业维度汇总结果",
+      "汇总结果应原样拼接子Agent返回的enterpriseAnalysis等长文本，不得总结、截断或概括"
+    ],
+    "expected_badcase": "主Agent对长文本结果进行总结或截断，未原样拼接；汇总时丢步漏掉某家企业；并行结果错序混淆",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC020",
+    "category": "多客户多意图",
+    "subcategory": "跨轮意图追加与实体指代",
+    "fixed_turns": [
+      "分析A公司的信贷123情况",
+      "再分析B公司的尽调清单"
+    ],
+    "pass_criteria": [
+      "第一轮主Agent调度A公司信贷123子Agent",
+      "第二轮主Agent应识别新实体B公司及新意图尽调清单，调度新子Agent处理",
+      "主Agent不得将B公司的意图错配给A公司，也不得丢失A公司的上下文"
+    ],
+    "expected_badcase": "第二轮将B公司的尽调清单意图错配给A公司；或丢失上下文，追问'B公司'是谁；或串行阻塞，等A完成才处理B导致逻辑混乱",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC021",
+    "category": "单客户单意图",
+    "subcategory": "实体模糊主子交接HITL",
+    "fixed_turns": [
+      "帮我分析一下小米的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别出'小米'为模糊实体",
+      "主Agent应调用ask_user工具向用户确认完整全称（如小米科技或小米集团）",
+      "确认后再经call_multiagent调度子Agent",
+      "不应使用自然语言冒充ask_user询问，也不应直接将模糊实体传给子Agent"
+    ],
+    "expected_badcase": "主Agent未调用ask_user工具，而是用自然语言冒充询问，或直接将模糊的'小米'传给子Agent导致交接数据丢失或分析对象错误",
+    "fix_target": "customer_confirm_skill"
+  },
+  {
+    "id": "BC022",
+    "category": "单客户单意图",
+    "subcategory": "子Agent内部编排baseInfo为空",
+    "fixed_turns": [
+      "请对华为进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应经call_multiagent调度子Agent",
+      "子Agent step1串行取baseInfo，若返回空或失败，应终止流程并回传错误",
+      "子Agent不应在step1无结果时进入step2/3/4并行执行",
+      "主Agent收到子Agent错误回传应向用户兜底提示"
+    ],
+    "expected_badcase": "子Agent step1返回空baseInfo后，仍带空值进入step2/3/4并行执行，导致后续分析全错或报错；或主Agent未兜底",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC023",
+    "category": "单客户单意图",
+    "subcategory": "单企业路由错配与主子调度",
+    "fixed_turns": [
+      "请对公司A进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应识别为单企业信贷分析意图",
+      "主Agent应遵循强约束路由至corporate_credit_123_multi_skill并调度子Agent执行",
+      "不应路由至corporate_credit_123_skill直接执行"
+    ],
+    "expected_badcase": "主Agent路由至corporate_credit_123_skill直接执行，绕过主子调度链路，违反单实体也走子Agent的强约束",
+    "fix_target": "corporate_credit_123_multi_skill / corporate_credit_123_skill"
+  },
+  {
+    "id": "BC024",
+    "category": "单客户单意图",
+    "subcategory": "子Agent失败主Agent违规回退",
+    "fixed_turns": [
+      "分析腾讯的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent经call_multiagent调度子Agent",
+      "若子Agent执行失败回传错误，主Agent应向用户提示失败并结束",
+      "主Agent严禁违规回退调用call_versatile重试"
+    ],
+    "expected_badcase": "子Agent失败后，主Agent未兜底提示失败，反而违规调用call_versatile尝试单独执行",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC025",
+    "category": "多客户单意图",
+    "subcategory": "主子交接entity_id口径冲突",
+    "fixed_turns": [
+      "分析腾讯和阿里两家公司的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体并经call_multiagent并行调度2个子Agent",
+      "主Agent向子Agent传递entity_id时应使用唯一数字ID（如entity_001）",
+      "不应传递占位符entity_auto导致子Agent解析失败"
+    ],
+    "expected_badcase": "主Agent在主子交接时传递占位符entity_auto，与子Agent要求的唯一数字ID口径冲突，导致子Agent调度失败",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC026",
+    "category": "多客户单意图",
+    "subcategory": "并行子Agent结果汇总丢步错序",
+    "fixed_turns": [
+      "帮我分析比亚迪和吉利的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体并经call_multiagent并行调度2个子Agent",
+      "主Agent应等待2个子Agent全部回传结果后再回复",
+      "主Agent汇总结果时应按企业实体正确归类，不丢步不错序"
+    ],
+    "expected_badcase": "主Agent未等回传就回复，或并行结果汇总时将比亚迪的分析结果错归给吉利，或漏掉某家结果",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC027",
+    "category": "多客户单意图",
+    "subcategory": "实体数与子Agent数不符漏客户",
+    "fixed_turns": [
+      "分析大疆、商汤和旷视三家的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应准确识别3个企业实体",
+      "主Agent应经call_multiagent并行调度3个子Agent",
+      "实体数与子Agent数必须一致，不可漏掉任何一家"
+    ],
+    "expected_badcase": "主Agent漏识别企业实体，只调度了2个子Agent，漏掉旷视的分析",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC028",
+    "category": "多客户多意图",
+    "subcategory": "差异化意图调度query固定拼接",
+    "fixed_turns": [
+      "分析A公司和B公司，但B公司只做尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应识别A公司为完整信贷123意图，B公司为仅尽调清单意图",
+      "主Agent调度子Agent时，应支持差异化意图透传，而非固定拼接query",
+      "子Agent应根据透传的意图执行对应步骤"
+    ],
+    "expected_badcase": "主Agent无法支持差异化意图调度，将B公司的query也固定拼接为'对B公司进行公司信贷123信息提取'，导致B公司执行了不需要的步骤",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC029",
+    "category": "多客户多意图",
+    "subcategory": "意图与客户错配",
+    "fixed_turns": [
+      "分析华为信贷和小米的尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应准确匹配实体与意图：华为对应信贷分析，小米对应尽调清单",
+      "主Agent经call_multiagent调度时，传给华为子Agent的意图为信贷，传给小米子Agent的意图为尽调",
+      "不可将意图与客户交叉错配"
+    ],
+    "expected_badcase": "主Agent路由规划错乱，将华为匹配为尽调清单，小米匹配为信贷分析，导致分析结果与用户需求完全相反",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC030",
+    "category": "多客户多意图",
+    "subcategory": "越界意图与对公意图混合调度",
+    "fixed_turns": [
+      "分析张三个人的信用评分和华为的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别'张三个人信用评分'为越界意图并拒绝或说明不适用",
+      "主Agent应识别'华为信贷情况'为对公信贷意图",
+      "主Agent仅针对华为调度子Agent执行，不将个人信贷路由至对公Skill"
+    ],
+    "expected_badcase": "主Agent将张三个人的信用评分也路由至corporate_credit_123_multi_skill，导致越界执行；或因混合意图导致整体调度失败",
+    "fix_target": "corporate_credit_123_skill"
+  },
+  {
+    "id": "BC031",
+    "category": "单客户单意图",
+    "subcategory": "子Agent内部编排_step1空值未拦截",
+    "fixed_turns": [
+      "分析腾讯的信贷123情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别1个企业实体并经call_multiagent调度1个子Agent",
+      "子Agent step1串行获取baseInfo，若返回空值应终止或提示，不应带空值进step2/3/4",
+      "子Agent step1完成后，step2/3/4应基于baseInfo并行执行",
+      "主Agent应等待子Agent结果回传后再回复用户"
+    ],
+    "expected_badcase": "子Agent step1返回空baseInfo后，未做拦截校验，仍带空值并行执行step2/3/4，导致后续分析无意义或报错",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC032",
+    "category": "单客户单意图",
+    "subcategory": "主子交接_子Agent失败主Agent违规重试",
+    "fixed_turns": [
+      "帮我做一下大疆公司的信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应识别1个企业实体并经call_multiagent调度1个子Agent",
+      "若子Agent执行失败，主Agent应向用户报错或兜底提示",
+      "主Agent严禁在子Agent失败后转而调用call_versatile重试",
+      "主Agent未等回传不提前回复"
+    ],
+    "expected_badcase": "子Agent执行失败后，主Agent违规回退到call_versatile尝试单独执行，破坏主子调度规则",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC033",
+    "category": "单客户单意图",
+    "subcategory": "子Agent内部编排_step1结果未透传",
+    "fixed_turns": [
+      "对字节跳动进行公司信贷123信息提取"
+    ],
+    "pass_criteria": [
+      "主Agent应识别1个企业实体并调度单子Agent",
+      "子Agent step1串行获取baseInfo后，应将baseInfo透传至step2/3/4的入参中",
+      "step2/3/4必须接收到step1的baseInfo后才能并行执行",
+      "最终结果按顺序拼接输出"
+    ],
+    "expected_badcase": "子Agent step1完成后，step2/3/4并行执行时未接收step1的baseInfo透传，导致分析缺乏基础信息",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC034",
+    "category": "单客户单意图",
+    "subcategory": "主子调度_单企业路由错配至非子Agent链路",
+    "fixed_turns": [
+      "请对招商银行进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应识别单企业实体并路由至corporate_credit_123_multi_skill调度子Agent执行",
+      "主Agent不应将单企业场景错误路由至corporate_credit_123_skill",
+      "主Agent经call_multiagent调度子Agent，子Agent内部step1串行、step2/3/4并行"
+    ],
+    "expected_badcase": "主Agent将单企业场景错误路由至corporate_credit_123_skill，导致未走主子Agent链路，编排逻辑混乱",
+    "fix_target": "corporate_credit_123_multi_skill / corporate_credit_123_skill"
+  },
+  {
+    "id": "BC035",
+    "category": "多客户单意图",
+    "subcategory": "主子调度_实体数与子Agent数不符漏客户",
+    "fixed_turns": [
+      "分析阿里和腾讯两家公司的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体（阿里、腾讯）",
+      "主Agent经call_multiagent并行调度2个子Agent，实体数与子Agent数严格一致",
+      "每个子Agent内部step1串行取baseInfo后step2/3/4并行",
+      "主Agent等待所有子Agent结果回传后按企业汇总回复"
+    ],
+    "expected_badcase": "主Agent只识别1个企业实体或只调度1个子Agent，漏掉另一家公司的分析",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC036",
+    "category": "多客户单意图",
+    "subcategory": "主子交接_entity_id字段口径冲突",
+    "fixed_turns": [
+      "帮我分析一下美团和京东的信贷123情况"
+    ],
+    "pass_criteria": [
+      "主Agent拆分实体时，应按子Agent要求传入唯一数字ID（如entity_001）",
+      "主Agent不应在交接时固定填占位符entity_auto",
+      "主Agent并行调度2个子Agent，结果按企业正确汇总回传"
+    ],
+    "expected_badcase": "主Agent在交接时固定填占位符entity_auto，导致子Agent因entity_id口径冲突调度失败",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC037",
+    "category": "多客户单意图",
+    "subcategory": "主子调度_未等回传就回复",
+    "fixed_turns": [
+      "同时分析网易和百度的信贷123"
+    ],
+    "pass_criteria": [
+      "主Agent经call_multiagent并行调度2个子Agent",
+      "主Agent必须等待2个子Agent结果全部回传后再汇总回复用户",
+      "汇总结果按企业维度完整呈现，不丢步错序"
+    ],
+    "expected_badcase": "主Agent未等2个子Agent结果回传就提前回复用户，导致输出结果缺失",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC038",
+    "category": "多客户多意图",
+    "subcategory": "主子调度_固定拼接无法支持差异化意图",
+    "fixed_turns": [
+      "分析A公司和B公司，A公司做信贷123分析，B公司只做尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应识别差异化意图，为A公司调度完整信贷123子Agent",
+      "为B公司调度仅含尽调清单的子Agent或调整query意图",
+      "主Agent不应将B公司强行套用信贷123全流程query拼接",
+      "结果按企业及对应意图正确汇总"
+    ],
+    "expected_badcase": "主Agent因query固定拼接，将B公司也强行套用信贷123全流程，导致意图与客户错配",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC039",
+    "category": "多客户多意图",
+    "subcategory": "主子调度_意图与客户错配",
+    "fixed_turns": [
+      "分析华为的尽调清单和小米的信贷123情况"
+    ],
+    "pass_criteria": [
+      "主Agent应准确匹配实体与意图：华为对应尽调清单，小米对应信贷123",
+      "主Agent经call_multiagent调度子Agent时，query参数应正确反映对应企业的意图",
+      "结果回传后，华为的尽调清单与小米的信贷分析不串换"
+    ],
+    "expected_badcase": "主Agent路由规划错乱，将华为匹配到信贷123，小米匹配到尽调清单，意图与客户错配",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC040",
+    "category": "多客户多意图",
+    "subcategory": "主子交接_并行结果拼接错序丢步",
+    "fixed_turns": [
+      "帮我分别做比亚迪的信贷123和格力的尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应并行调度两个不同意图的子Agent",
+      "主Agent等待所有子Agent结果回传",
+      "按企业维度正确汇总拼接结果，比亚迪对应信贷123，格力对应尽调清单，不丢步错序"
+    ],
+    "expected_badcase": "主Agent并行汇总时结果拼接错序（如把比亚迪结果标为格力）或丢步（丢失某家结果），导致多客户多意图输出混乱",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC041",
+    "category": "单客户单意图",
+    "subcategory": "子Agent内部编排_step1空值穿透",
+    "fixed_turns": [
+      "分析华为的信贷123情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别1个企业实体并经call_multiagent调度1个子Agent",
+      "子Agent step1串行取baseInfo，若baseInfo为空应终止并报错，不应进入step2/3/4",
+      "主Agent应兜底处理子Agent的报错，向用户提示基础信息获取失败"
+    ],
+    "expected_badcase": "子Agent step1返回空baseInfo后，仍带空值并行执行step2/3/4，导致后续分析无意义或系统报错；主Agent未兜底",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC042",
+    "category": "单客户单意图",
+    "subcategory": "主子调度_单实体路径错配",
+    "fixed_turns": [
+      "请对腾讯进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应识别1个企业实体并经call_multiagent调度1个子Agent",
+      "子Agent内部step1串行取baseInfo后step2/3/4并行",
+      "主Agent不应因单企业而直接调用call_versatile执行，必须走子Agent链路"
+    ],
+    "expected_badcase": "主Agent判断为单企业后直接执行，未走call_multiagent调度子Agent，违反单实体也必须走子Agent的强约束",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC043",
+    "category": "单客户单意图",
+    "subcategory": "主子交接_子Agent失败违规回退",
+    "fixed_turns": [
+      "帮我分析一下大疆的信贷123情况"
+    ],
+    "pass_criteria": [
+      "主Agent应调度子Agent执行",
+      "若子Agent返回失败，主Agent应向用户报错或重试call_multiagent",
+      "主Agent绝对禁止转而调用call_versatile尝试单独执行"
+    ],
+    "expected_badcase": "子Agent执行失败后，主Agent违规回退到call_versatile重试，破坏主子调度闭环与业务隔离",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC044",
+    "category": "单客户单意图",
+    "subcategory": "主子交接_entity_id字段口径冲突",
+    "fixed_turns": [
+      "分析字节跳动的信贷123情况"
+    ],
+    "pass_criteria": [
+      "主Agent调度子Agent时，传入的entity_id字段应符合子Agent要求的唯一数字ID格式（如entity_001）",
+      "不应传入占位符entity_auto导致子Agent解析失败",
+      "交接数据不应丢失或格式错乱"
+    ],
+    "expected_badcase": "主Agent交接时填入占位符entity_auto，与子Agent要求的唯一数字ID口径冲突，导致子Agent调度失败或数据丢失",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC045",
+    "category": "多客户单意图",
+    "subcategory": "主子调度_实体数与子Agent数不符",
+    "fixed_turns": [
+      "分析阿里巴巴和京东两家公司的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体并经call_multiagent并行调度2个子Agent",
+      "每个子Agent step1串行取baseInfo后step2/3/4并行",
+      "结果按企业汇总回传，不漏客户"
+    ],
+    "expected_badcase": "主Agent只调度1个子Agent，漏掉京东；或实体数与子Agent数不符，导致结果汇总丢步",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC046",
+    "category": "多客户单意图",
+    "subcategory": "主子调度_未等回传就回复",
+    "fixed_turns": [
+      "请对网易和百度进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应等待2个子Agent全部回传结果后，再进行汇总并回复用户",
+      "不应在子Agent执行期间提前回复空结果或部分结果"
+    ],
+    "expected_badcase": "主Agent未等2个子Agent回传就回复用户，导致输出缺失或为空",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC047",
+    "category": "多客户单意图",
+    "subcategory": "子Agent内部编排_并行结果拼接错序",
+    "fixed_turns": [
+      "帮我分析小米和比亚迪的信贷123情况"
+    ],
+    "pass_criteria": [
+      "2个子Agent内部step2/3/4并行结果应按规范顺序拼接",
+      "主Agent汇总时不应丢失步骤或错序",
+      "step1结果必须透传至后续步骤"
+    ],
+    "expected_badcase": "子Agent并行结果拼接错序或丢步，导致最终输出结构混乱；或step1结果未透传",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC048",
+    "category": "多客户多意图",
+    "subcategory": "主子调度_差异化意图错配",
+    "fixed_turns": [
+      "分析A公司和B公司，A公司做信贷123分析，B公司只做尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体及差异化意图，分别调度2个子Agent",
+      "A公司子Agent走完整step1/2/3/4，B公司子Agent仅执行对应尽调清单步骤",
+      "意图与客户不应错配"
+    ],
+    "expected_badcase": "主Agent将固定query拼接给所有子Agent，导致B公司也做了完整信贷123分析，意图与客户错配",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC049",
+    "category": "多客户多意图",
+    "subcategory": "主子交接_HITL确认缺失",
+    "fixed_turns": [
+      "分析苹果和小米的信贷情况，苹果只做基础信息，小米做全量分析"
+    ],
+    "pass_criteria": [
+      "若'苹果'存在歧义（苹果科技/苹果食品），主Agent应调用ask_user工具确认完整全称",
+      "不应使用自然语言冒充ask_user询问",
+      "确认后再调度子Agent，且意图与实体正确对应"
+    ],
+    "expected_badcase": "主Agent用自然语言询问'请问苹果是哪家公司？'而非调用ask_user工具，或直接猜测调度导致实体错配",
+    "fix_target": "customer_confirm_skill"
+  },
+  {
+    "id": "BC050",
+    "category": "多客户多意图",
+    "subcategory": "主子调度_路由割裂",
+    "fixed_turns": [
+      "对华为做信贷123分析，对腾讯做尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应识别多客户多意图，统一路由至corporate_credit_123_multi_skill经call_multiagent调度",
+      "不应将华为单独路由至corporate_credit_123_skill导致主子路径割裂"
+    ],
+    "expected_badcase": "主Agent将华为路由至单企业Skill，腾讯路由至多企业Skill，导致路径割裂，无法统一调度和汇总",
+    "fix_target": "corporate_credit_123_multi_skill / corporate_credit_123_skill"
+  },
+  {
+    "id": "BC051",
+    "category": "单客户单意图",
+    "subcategory": "单企业路由冲突与子Agent内部编排",
+    "fixed_turns": [
+      "对大疆创新进行公司信贷123分析"
+    ],
+    "pass_criteria": [
+      "主 Agent 应识别出单企业实体'大疆创新'并经 call_multiagent 调度子 Agent，而非直接执行",
+      "子 Agent 内部应严格串行执行 step1（call_versatile 取 baseInfo），待 step1 完成后再并行执行 step2/3/4",
+      "主 Agent 应等待子 Agent 回传结果后再回复用户"
+    ],
+    "expected_badcase": "主 Agent 识别为单企业后直接执行，未走 call_multiagent 调度子 Agent；或子 Agent 内部未等 step1 完成就提前发起 step2/3/4",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC052",
+    "category": "单客户单意图",
+    "subcategory": "子Agent步骤1空值阻断失败",
+    "fixed_turns": [
+      "帮我分析一下字节跳动的信贷情况"
+    ],
+    "pass_criteria": [
+      "主 Agent 应调度子 Agent 执行",
+      "子 Agent step1 返回空 baseInfo 时，应终止后续步骤并上报主 Agent 获取基础信息失败",
+      "主 Agent 应向用户明确提示基础信息缺失，不应继续输出分析结果"
+    ],
+    "expected_badcase": "子 Agent step1 返回空 baseInfo，但 step2/3/4 仍带空值并行执行，导致输出无意义或幻觉分析结果",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC053",
+    "category": "单客户单意图",
+    "subcategory": "子Agent内部baseInfo透传丢失",
+    "fixed_turns": [
+      "帮我分析一下网易的信贷123"
+    ],
+    "pass_criteria": [
+      "子 Agent step1 成功获取 baseInfo 后，应将 baseInfo 原样透传给 step2/3/4 的调用参数",
+      "step2/3/4 的 query_description 中必须包含完整的 baseInfo 字段内容",
+      "最终分析结果应基于透传的 baseInfo 生成"
+    ],
+    "expected_badcase": "子 Agent step1 完成后，未将 baseInfo 透传给 step2/3/4，导致后续步骤在缺乏基础信息的情况下运行，输出结果偏离",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC054",
+    "category": "单客户单意图",
+    "subcategory": "子Agent结果拼接截断与忠实性",
+    "fixed_turns": [
+      "分析一下格力电器的信贷123，请完整输出所有内容"
+    ],
+    "pass_criteria": [
+      "主 Agent 应将子 Agent 返回的 step2、step3、step4 结果按顺序完整拼接输出",
+      "对长文本的 enterpriseAnalysis 等字段应原样保留，不得进行总结、概括或截断",
+      "输出内容应与子 Agent 回传的原始文本完全一致"
+    ],
+    "expected_badcase": "主 Agent 对子 Agent 返回的长文本进行了总结或截断，未原样拼接，导致用户获取的信息不完整",
+    "fix_target": "corporate_credit_123_skill"
+  },
+  {
+    "id": "BC055",
+    "category": "多客户单意图",
+    "subcategory": "主子交接entity_id字段口径冲突",
+    "fixed_turns": [
+      "分析腾讯和阿里两家公司的信贷情况"
+    ],
+    "pass_criteria": [
+      "主 Agent 应识别 2 个企业实体并经 call_multiagent 并行调度 2 个子 Agent",
+      "主 Agent 传递给子 Agent 的 entity_id 应符合子 Agent 要求的唯一数字ID格式（如 entity_001），而非占位符 entity_auto",
+      "子 Agent 应成功解析 entity_id 并正确执行 step1"
+    ],
+    "expected_badcase": "主 Agent 传递占位符 entity_auto 给子 Agent，导致子 Agent 因字段口径不一致调度失败或查询不到基础信息",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC056",
+    "category": "多客户单意图",
+    "subcategory": "并行调度实体数漏识别",
+    "fixed_turns": [
+      "帮我分析一下比亚迪、长城汽车和吉利控股的信贷123"
+    ],
+    "pass_criteria": [
+      "主 Agent 应准确识别 3 个企业实体（比亚迪、长城汽车、吉利控股）",
+      "主 Agent 应经 call_multiagent 并行调度 3 个子 Agent，实体数与子 Agent 数严格相符",
+      "最终汇总结果应包含全部 3 家企业的分析报告，不漏客户"
+    ],
+    "expected_badcase": "主 Agent 漏识别实体，只调度了 2 个子 Agent（如漏掉吉利控股），导致最终汇总结果缺失该客户",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC057",
+    "category": "多客户单意图",
+    "subcategory": "子Agent失败主Agent违规回退",
+    "fixed_turns": [
+      "分析中芯国际和京东方的信贷情况"
+    ],
+    "pass_criteria": [
+      "主 Agent 应并行调度 2 个子 Agent",
+      "若其中 1 个子 Agent（如京东方）执行失败，主 Agent 应兜底提示该企业分析失败，并输出成功的企业结果",
+      "主 Agent 严禁在子 Agent 失败时转而调用 call_versatile 重试"
+    ],
+    "expected_badcase": "子 Agent 执行失败后，主 Agent 违规调用 call_versatile 尝试单独执行，破坏了主子调度架构且可能导致结果格式不一致",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC058",
+    "category": "多客户多意图",
+    "subcategory": "差异化意图调度拼接失败",
+    "fixed_turns": [
+      "分析美团和拼多多的信贷情况，但拼多多只要尽调清单"
+    ],
+    "pass_criteria": [
+      "主 Agent 应识别 2 个企业实体及差异化意图（美团为完整信贷123，拼多多为仅尽调清单）",
+      "主 Agent 应在调度子 Agent 时通过 query 传递差异化意图，而非固定拼接",
+      "子 Agent 应根据差异化意图执行对应步骤（美团执行 step1-4，拼多多仅执行 step1 和 step4）"
+    ],
+    "expected_badcase": "主 Agent 使用固定 query 格式拼接，无法支持差异化意图，导致拼多多也执行了完整的信贷123分析，或美团只输出了尽调清单",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC059",
+    "category": "多客户多意图",
+    "subcategory": "意图与客户实体错配",
+    "fixed_turns": [
+      "分析海尔智家的信贷123，以及海康威视的尽调清单"
+    ],
+    "pass_criteria": [
+      "主 Agent 应正确映射意图与实体：海尔智家对应信贷123，海康威视对应尽调清单",
+      "调度子 Agent 时，传递的 query 参数应准确包含对应的实体名和意图",
+      "最终汇总输出时，两家企业的结果与意图严格对应，无错位"
+    ],
+    "expected_badcase": "主 Agent 发生意图与客户错配，将信贷123意图分配给海康威视，将尽调清单分配给海尔智家",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC060",
+    "category": "多客户多意图",
+    "subcategory": "模糊实体HITL确认缺失",
+    "fixed_turns": [
+      "分析小米科技的信贷123，以及苹果的尽调清单"
+    ],
+    "pass_criteria": [
+      "主 Agent 应识别出'苹果'为模糊实体（可能是苹果果业或苹果公司）",
+      "主 Agent 必须调用 ask_user 工具向用户确认'苹果'的完整全称，不得使用自然语言直接询问",
+      "在用户确认前，不应调度针对'苹果'的子 Agent"
+    ],
+    "expected_badcase": "主 Agent 未调用 ask_user 工具，而是用自然语言冒充询问'请问苹果是哪家公司？'，或直接猜测为'苹果公司'并调度子 Agent",
+    "fix_target": "customer_confirm_skill"
+  },
+  {
+    "id": "BC061",
+    "category": "单客户单意图",
+    "subcategory": "子Agent内部编排-空baseInfo透传",
+    "fixed_turns": [
+      "分析一下比亚迪的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别1个企业实体并经call_multiagent调度1个子Agent",
+      "子Agent内部必须先串行完成step1(call_versatile取baseInfo)",
+      "若step1返回status=success但baseInfo为空，子Agent应终止流程或提示基础信息缺失，不应带空值进入step2/3/4",
+      "step1结果应正确透传至step2/3/4"
+    ],
+    "expected_badcase": "子Agent step1返回空baseInfo时未做拦截，仍带空值并行执行step2/3/4，导致后续分析无依据或报错",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC062",
+    "category": "多客户单意图",
+    "subcategory": "主子调度-实体数与子Agent数不符及ID冲突",
+    "fixed_turns": [
+      "帮我分析腾讯和阿里的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体并经call_multiagent并行调度2个子Agent",
+      "主Agent向子Agent传递entity_id时应使用唯一数字ID(如entity_001)，而非占位符entity_auto",
+      "主Agent应等待2个子Agent均回传结果后再汇总回复",
+      "汇总结果应按企业维度清晰呈现，不漏客户"
+    ],
+    "expected_badcase": "主Agent只调度1个子Agent漏掉阿里；或传递entity_id时使用占位符entity_auto导致子Agent调度失败；或未等回传就回复",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC063",
+    "category": "多客户多意图",
+    "subcategory": "主子调度-意图错配与固定拼接失效",
+    "fixed_turns": [
+      "分析A公司的信贷情况，但B公司只做尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体和2个差异化意图",
+      "主Agent经call_multiagent调度2个子Agent，A公司子Agent执行完整step1-4，B公司子Agent仅执行step1和step4",
+      "子Agent的query应根据意图差异化构造，不应固定拼接为'对{企业名称}进行公司信贷123信息提取'",
+      "主Agent应按企业维度分别回传各自对应意图的结果"
+    ],
+    "expected_badcase": "主Agent将B公司的意图错配为完整信贷分析；或query固定拼接导致B公司无法仅做尽调清单；或漏调度B公司",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC064",
+    "category": "单客户单意图",
+    "subcategory": "主子调度-单企业路由错乱",
+    "fixed_turns": [
+      "请对华为进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应识别单企业实体，并按强约束走子Agent路径调度",
+      "主Agent不应因单企业而直接执行或路由至corporate_credit_123_skill",
+      "子Agent内部应完成step1串行及step2/3/4并行"
+    ],
+    "expected_badcase": "主Agent因单企业分流逻辑与强约束矛盾，直接在主Agent执行或路由至单企业skill，未走子Agent调度",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC065",
+    "category": "多客户单意图",
+    "subcategory": "主子交接-子Agent失败主Agent违规重试",
+    "fixed_turns": [
+      "分析字节跳动和美团的公司信贷123信息"
+    ],
+    "pass_criteria": [
+      "主Agent应经call_multiagent并行调度2个子Agent",
+      "若某子Agent(如美团)执行失败，主Agent应兜底提示该企业分析失败",
+      "主Agent严禁在子Agent失败后违规回退调用call_versatile重试"
+    ],
+    "expected_badcase": "美团子Agent失败后，主Agent违规调用call_versatile尝试单独执行美团分析，违反核心规则5",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC066",
+    "category": "多客户多意图",
+    "subcategory": "主子交接-交接数据丢失与口径不一致",
+    "fixed_turns": [
+      "对比小米的信贷分析和京东的尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体和2个意图，调度2个子Agent",
+      "主Agent向子Agent交接时，企业实体名称和意图应完整准确，不丢失",
+      "子Agent回传结果时，主Agent应按企业维度正确汇总，不混叠"
+    ],
+    "expected_badcase": "主Agent交接时丢失意图导致京东也做信贷分析；或子Agent回传结果时主Agent将小米和京东结果错序混叠",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC067",
+    "category": "单客户单意图",
+    "subcategory": "主子调度-实体确认未调用ask_user",
+    "fixed_turns": [
+      "帮我分析一下小米的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent识别到模糊实体'小米'时，应调用ask_user工具询问完整全称",
+      "主Agent不应使用自然语言直接追问而绕过ask_user工具",
+      "待用户确认全称后再调度子Agent"
+    ],
+    "expected_badcase": "主Agent用自然语言冒充ask_user询问全称，未调用工具，导致后续子Agent无法获取标准实体ID",
+    "fix_target": "customer_confirm_skill"
+  },
+  {
+    "id": "BC068",
+    "category": "多客户单意图",
+    "subcategory": "主子调度-并行结果汇总错序",
+    "fixed_turns": [
+      "分析蔚来、小鹏、理想的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别3个企业实体并经call_multiagent并行调度3个子Agent",
+      "主Agent应等待3个子Agent均回传结果",
+      "主Agent汇总结果时应按企业维度清晰呈现，不丢步、不错序"
+    ],
+    "expected_badcase": "主Agent未等3个子Agent全部回传就回复；或汇总时将蔚来的分析结果错配给小鹏；或漏掉理想的汇总",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC069",
+    "category": "多客户多意图",
+    "subcategory": "主子调度-越界意图未拦截",
+    "fixed_turns": [
+      "分析A公司的企业信贷，还有张三个人的信用评分"
+    ],
+    "pass_criteria": [
+      "主Agent应识别A公司为企业信贷意图，调度子Agent执行",
+      "主Agent应识别张三为个人信贷越界意图，明确拒绝或提示不支持",
+      "主Agent不应将张三路由至corporate_credit_123_multi_skill或子Agent"
+    ],
+    "expected_badcase": "主Agent将张三的个人信贷意图也路由至对公信贷子Agent执行，导致越界",
+    "fix_target": "corporate_credit_123_multi_skill / corporate_credit_123_skill"
+  },
+  {
+    "id": "BC070",
+    "category": "单客户单意图",
+    "subcategory": "子Agent内部编排-step1未完成进step2/3/4",
+    "fixed_turns": [
+      "对大疆公司进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应调度1个子Agent",
+      "子Agent内部必须先串行完成step1(call_versatile取baseInfo)",
+      "step1完成后再并行执行step2/3/4(call_multiversatile)",
+      "step1的baseInfo必须透传给step2/3/4"
+    ],
+    "expected_badcase": "子Agent未等step1完成就提前发起step2/3/4并行调用；或step1的baseInfo未透传至step2/3/4导致分析缺乏基础信息",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC071",
+    "category": "单客户单意图",
+    "subcategory": "单企业路由与子Agent内部编排",
+    "fixed_turns": [
+      "请对腾讯进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应识别单企业实体，并按强约束路由至corporate_credit_123_multi_skill调度子Agent执行",
+      "子Agent内部应先串行完成step1获取baseInfo，再并行执行step2/3/4",
+      "主Agent应等待子Agent执行完毕后将结果完整回传"
+    ],
+    "expected_badcase": "主Agent误判单企业无需走子Agent，直接调用corporate_credit_123_skill或call_versatile；或子Agent未等step1完成即触发step2/3/4并行",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC072",
+    "category": "单客户单意图",
+    "subcategory": "子Agent步骤1空值与编排断点",
+    "fixed_turns": [
+      "帮我分析一下新成立的中科智云公司的信贷情况"
+    ],
+    "pass_criteria": [
+      "子Agent在step1获取baseInfo后，若baseInfo为空或无效，应终止后续step2/3/4并行执行",
+      "子Agent应向主Agent回传失败或无数据原因",
+      "主Agent应兜底提示用户该企业基础信息缺失无法继续分析"
+    ],
+    "expected_badcase": "子Agent在step1返回空baseInfo时，仍带空值强行触发step2/3/4并行调用，导致后续步骤解析异常或返回无意义结果；主Agent未兜底",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC073",
+    "category": "单客户单意图",
+    "subcategory": "子Agent失败主Agent违规回退",
+    "fixed_turns": [
+      "分析一下大疆创新的信贷123信息"
+    ],
+    "pass_criteria": [
+      "若子Agent执行失败，主Agent应接收失败状态并向用户说明",
+      "主Agent严禁违规回退调用call_versatile尝试单独执行",
+      "主Agent应保持主子调度闭环，不破坏编排规则"
+    ],
+    "expected_badcase": "子Agent失败后，主Agent未按规则兜底，而是违规调用call_versatile重试，破坏主子调度闭环",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC074",
+    "category": "单客户单意图",
+    "subcategory": "子Agent结果拼接与忠实性",
+    "fixed_turns": [
+      "对字节跳动进行公司信贷123分析"
+    ],
+    "pass_criteria": [
+      "子Agent在step2/3/4并行返回超长文本时，应按顺序原样拼接回传给主Agent",
+      "主Agent亦应将拼接结果原样输出，不得进行总结或截断",
+      "输出需包含完整的enterpriseAnalysis等字段内容"
+    ],
+    "expected_badcase": "子Agent或主Agent对超长的enterpriseAnalysis等字段进行了截断或自然语言概括，未按强约束原样拼接输出",
+    "fix_target": "corporate_credit_123_sub_skill / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC075",
+    "category": "多客户单意图",
+    "subcategory": "实体数与子Agent数不符",
+    "fixed_turns": [
+      "分析华为和小米信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应准确识别2个企业实体（华为、小米）",
+      "主Agent经call_multiagent并行调度2个子Agent",
+      "每个子Agent独立完成step1串行和step2/3/4并行，主Agent按企业汇总回传结果"
+    ],
+    "expected_badcase": "主Agent漏识别企业实体，只调度1个子Agent（如只分析华为）；或实体数与子Agent数不符，导致结果缺失",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC076",
+    "category": "多客户单意图",
+    "subcategory": "主子交接entity_id字段口径冲突",
+    "fixed_turns": [
+      "分析腾讯和阿里两家公司的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent在调度子Agent时，应确保传递的entity_id符合子Agent要求的唯一数字ID格式（如entity_001）",
+      "主Agent不应使用占位符entity_auto代替真实企业ID",
+      "主子交接数据口径需保持一致，保证子Agent能正确解析实体"
+    ],
+    "expected_badcase": "主Agent交接时填入占位符entity_auto，导致子Agent无法解析真实企业实体，调度失败或分析错乱",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC077",
+    "category": "多客户单意图",
+    "subcategory": "并行子Agent结果汇总错序丢步",
+    "fixed_turns": [
+      "帮我看看比亚迪和宁德时代的信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应等待2个子Agent全部执行完毕后再汇总",
+      "主Agent按企业维度正确汇总step2/3/4的并行结果，不丢步、不错序",
+      "比亚迪与宁德时代的结果各自独立完整呈现"
+    ],
+    "expected_badcase": "主Agent未等回传就回复；或并行结果汇总时将比亚迪的step2与宁德时代的step3错序拼接；或丢失某个step的结果",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC078",
+    "category": "多客户多意图",
+    "subcategory": "差异化意图调度与query固定拼接冲突",
+    "fixed_turns": [
+      "分析A公司和B公司，但B公司只做尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应识别差异化意图，为A公司调度完整信贷123分析子Agent",
+      "为B公司调度仅含尽调清单意图的子Agent",
+      "query拼接需体现意图差异，不强制套用固定格式"
+    ],
+    "expected_badcase": "主Agent因query固定拼接限制，强行给B公司也执行完整信贷123分析，无法支持差异化意图调度",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC079",
+    "category": "多客户多意图",
+    "subcategory": "意图与客户错配",
+    "fixed_turns": [
+      "分析华为的尽调清单和小米的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应精准匹配意图与客户，调度2个子Agent",
+      "子Agent1执行华为的尽调清单，子Agent2执行小米的信贷分析",
+      "结果按对应客户及意图准确回传，不混淆"
+    ],
+    "expected_badcase": "主Agent将意图错配，如对华为做信贷分析、对小米做尽调清单；或串行vs并行选择错误导致逻辑混乱",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC080",
+    "category": "多客户多意图",
+    "subcategory": "多实体模糊指代与HITL确认",
+    "fixed_turns": [
+      "分析苹果和那个做空调的格力信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别出'苹果'和模糊实体'那个做空调的格力'",
+      "主Agent必须调用ask_user工具确认'格力'的完整全称，而非用自然语言冒充询问",
+      "确认完整实体后再经call_multiagent调度子Agent"
+    ],
+    "expected_badcase": "主Agent用自然语言冒充ask_user询问全称；或未确认直接猜测调度，导致子Agent实体错误或调度失败",
+    "fix_target": "customer_confirm_skill / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC081",
+    "category": "单客户单意图",
+    "subcategory": "子Agent内部编排-step1空值透传",
+    "fixed_turns": [
+      "分析大疆公司的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别1个企业实体并调度1个子Agent",
+      "子Agent应先串行执行step1获取baseInfo",
+      "若step1返回空baseInfo，子Agent应中止后续step2/3/4并行执行并报错，或主Agent应兜底提示baseInfo获取失败",
+      "不应带空baseInfo继续执行step2/3/4"
+    ],
+    "expected_badcase": "子Agent step1返回空baseInfo后，仍带空值继续并行执行step2/3/4，导致后续分析结果全空或异常",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC082",
+    "category": "多客户单意图",
+    "subcategory": "主子调度-实体漏识别",
+    "fixed_turns": [
+      "帮我分析一下字节跳动和快手科技的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体（字节跳动、快手科技）",
+      "主Agent应经call_multiagent并行调度2个子Agent",
+      "每个子Agent分别处理对应企业的信贷分析",
+      "主Agent应等待2个子Agent结果回传后按企业汇总回复"
+    ],
+    "expected_badcase": "主Agent只识别出1个企业实体（如仅字节跳动），只调度1个子Agent，漏掉快手科技的分析",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC083",
+    "category": "多客户多意图",
+    "subcategory": "主子调度-意图错配与固定query拼接",
+    "fixed_turns": [
+      "分析A公司的信贷情况，但B公司只做尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体和2个差异化意图",
+      "主Agent应为A公司调度完整信贷分析子Agent，为B公司调度仅含尽调清单的子Agent或正确传递差异化意图",
+      "子Agent的query参数应准确反映差异化意图，而非统一拼接为'对{企业名称}进行公司信贷123信息提取'"
+    ],
+    "expected_badcase": "主Agent将B公司的意图错配为完整信贷分析，或因query固定拼接格式限制，强制给B公司也执行了完整信贷123分析，无法支持差异化意图调度",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC084",
+    "category": "单客户单意图",
+    "subcategory": "主子交接-entity_id字段口径冲突",
+    "fixed_turns": [
+      "对腾讯公司进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应调度子Agent并传递正确的entity_id",
+      "主Agent传递的entity_id应符合子Agent要求的唯一数字ID格式（如entity_001）",
+      "子Agent应成功接收并使用该entity_id执行step1",
+      "不应因entity_id为占位符entity_auto导致子Agent查询失败"
+    ],
+    "expected_badcase": "主Agent交接时传递占位符entity_auto，而子Agent要求唯一数字ID（如entity_001），导致子Agent调度或查询失败",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC085",
+    "category": "多客户单意图",
+    "subcategory": "主子调度-并行结果汇总错序",
+    "fixed_turns": [
+      "分析宁德时代和比亚迪的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应并行调度2个子Agent",
+      "主Agent应等待所有子Agent回传结果",
+      "主Agent汇总结果时，应将每个企业的baseInfo、分析结果、方案等按企业维度正确归类拼接",
+      "不应将A企业的分析结果与B企业的baseInfo错位拼接"
+    ],
+    "expected_badcase": "主Agent并行汇总时结果错序，将宁德时代的分析结果与比亚迪的baseInfo拼接，导致企业信息张冠李戴",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC086",
+    "category": "多客户多意图",
+    "subcategory": "主子交接-子Agent失败主Agent违规重试",
+    "fixed_turns": [
+      "分析小米的信贷情况，并查一下大疆的尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应调度2个子Agent分别处理不同意图",
+      "若其中一个子Agent（如小米）返回失败或partial_success，主Agent应兜底提示该企业分析失败",
+      "主Agent严禁回退到call_versatile重试失败的企业分析",
+      "另一个成功的子Agent结果应正常返回"
+    ],
+    "expected_badcase": "小米子Agent失败后，主Agent违规回退调用call_versatile尝试单独执行小米的分析，违反禁止转用call_versatile的规则",
+    "fix_target": "AgentRule_task_dispatch_sub"
+  },
+  {
+    "id": "BC087",
+    "category": "单客户单意图",
+    "subcategory": "主子调度-单企业分流逻辑错乱",
+    "fixed_turns": [
+      "请对华为进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应识别单企业实体",
+      "主Agent应遵循强约束，即使是单实体也经call_multiagent调度子Agent执行",
+      "主Agent不应直接执行或路由到corporate_credit_123_skill"
+    ],
+    "expected_badcase": "主Agent因单企业分流逻辑错乱，直接在主Agent内部执行或路由到单企业skill，未走call_multiagent调度子Agent，违反单实体也走子Agent的强约束",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC088",
+    "category": "多客户单意图",
+    "subcategory": "子Agent内部编排-step1结果未透传",
+    "fixed_turns": [
+      "帮我分析一下阿里巴巴和京东的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应并行调度2个子Agent",
+      "每个子Agent内部step1串行获取baseInfo后，必须将baseInfo透传给step2/3/4并行执行",
+      "step2/3/4的调用参数中应包含step1返回的完整baseInfo",
+      "不应出现step1执行完但step2/3/4未携带baseInfo的情况"
+    ],
+    "expected_badcase": "子Agent执行完step1后，未将baseInfo透传给step2/3/4，导致step2/3/4在缺失基础信息的情况下并行执行，产出无效分析",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC089",
+    "category": "多客户多意图",
+    "subcategory": "主子调度-未等回传就回复",
+    "fixed_turns": [
+      "查一下万科的信贷情况，顺便分析一下碧桂园的尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应调度2个子Agent分别处理万科和碧桂园",
+      "主Agent必须等待所有子Agent回传结果后，再进行汇总并回复用户",
+      "不应在子Agent执行过程中或仅部分完成时提前回复用户"
+    ],
+    "expected_badcase": "主Agent发起调度后，未等待子Agent结果回传，就基于空结果或部分结果提前回复用户，导致回复内容缺失或错误",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC090",
+    "category": "单客户单意图",
+    "subcategory": "主子交接-HITL确认工具未调用",
+    "fixed_turns": [
+      "帮我分析一下小米的信贷情况"
+    ],
+    "pass_criteria": [
+      "当企业实体名称存在歧义（如小米科技/小米集团）时，主Agent应调用ask_user工具向用户确认完整全称",
+      "主Agent不应仅用自然语言冒充ask_user询问",
+      "确认后方可调度子Agent"
+    ],
+    "expected_badcase": "主Agent用自然语言冒充ask_user询问全称，未调用工具，导致交互状态未正确记录，或直接猜测实体名称调度子Agent导致分析对象错误",
+    "fix_target": "customer_confirm_skill"
+  },
+  {
+    "id": "BC091",
+    "category": "单客户单意图",
+    "subcategory": "子Agent内部编排与业务规则冲突",
+    "fixed_turns": [
+      "分析某小企业的信贷123情况，并设计一个5年期的流动资金贷款方案"
+    ],
+    "pass_criteria": [
+      "主Agent应识别1个企业实体并调度1个子Agent",
+      "子Agent应先串行执行step1(call_versatile)获取baseInfo",
+      "若step1返回空baseInfo，子Agent应终止后续步骤并报错，不应带空值执行step2/3/4",
+      "Agent应明确提示仅辅助企业信贷分析判断，不替代最终授信决策，且不应输出违规的5年期流贷方案"
+    ],
+    "expected_badcase": "子Agent在step1返回空baseInfo后，未拦截仍带空值并行执行step2/3/4；且未识别监管红线，直接输出了5年期流动资金贷款的违规方案",
+    "fix_target": "corporate_credit_123_sub_skill / corporate_credit_123_skill"
+  },
+  {
+    "id": "BC092",
+    "category": "单客户单意图",
+    "subcategory": "单企业分流逻辑与强约束矛盾",
+    "fixed_turns": [
+      "请对华为进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应识别1个企业实体，并按强约束经call_multiagent调度1个子Agent执行",
+      "不应因单企业而绕过子Agent直接调用call_versatile执行",
+      "主Agent应等待子Agent回传结果后再回复"
+    ],
+    "expected_badcase": "主Agent因单企业分流逻辑错误，绕过call_multiagent和子Agent，直接调用call_versatile执行，违反强约束",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC093",
+    "category": "单客户单意图",
+    "subcategory": "主子交接entity_id字段口径冲突",
+    "fixed_turns": [
+      "帮我分析一下字节跳动的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别字节跳动实体，调度子Agent时传入符合子Agent输入槽位要求的唯一数字ID(如entity_001)",
+      "子Agent应成功接收数字ID并执行step1",
+      "主Agent不应传入占位符entity_auto导致子Agent解析失败"
+    ],
+    "expected_badcase": "主Agent调度子Agent时传入占位符entity_auto，与子Agent要求的唯一数字ID口径冲突，导致子Agent调度失败",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC094",
+    "category": "多客户单意图",
+    "subcategory": "个人信贷越界与实体漏识别",
+    "fixed_turns": [
+      "分析张三个人和小微企业的信贷情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别'小微企业'为对公实体，'张三'为个人实体",
+      "对公实体应调度子Agent执行信贷123分析",
+      "个人信贷属于越界意图，主Agent应拒绝为张三执行信贷分析并提示越界",
+      "不应将个人实体也调度子Agent或混入对公分析"
+    ],
+    "expected_badcase": "主Agent将张三和小微企业都识别为对公实体，调度2个子Agent，导致个人信贷越界执行；或漏识别小微企业只调度1个子Agent",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_skill"
+  },
+  {
+    "id": "BC095",
+    "category": "多客户单意图",
+    "subcategory": "子Agent内部baseInfo未透传与结果错序",
+    "fixed_turns": [
+      "对阿里和腾讯进行信贷123分析"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体并经call_multiagent并行调度2个子Agent",
+      "每个子Agent内部step1串行取baseInfo后，必须将baseInfo透传给step2/3/4并行执行",
+      "并行结果按企业维度正确拼接回传，不丢步不错序"
+    ],
+    "expected_badcase": "子Agent内部step1的baseInfo未透传给step2/3/4，导致后续步骤缺少基础信息；或并行结果拼接错序，将阿里的分析结果归到腾讯名下",
+    "fix_target": "corporate_credit_123_sub_skill"
+  },
+  {
+    "id": "BC096",
+    "category": "多客户单意图",
+    "subcategory": "附件跨轮继承与子Agent失败违规回退",
+    "fixed_turns": [
+      "这是大疆的财报附件att_002",
+      "基于刚才的附件分析大疆和商汤的信贷123情况"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体(大疆、商汤)",
+      "调度大疆子Agent时，应将att_002透传至子Agent的query中",
+      "调度商汤子Agent时，因无附件应正常执行",
+      "若商汤子Agent失败，主Agent应兜底提示失败，严禁违规回退到call_versatile重试"
+    ],
+    "expected_badcase": "主Agent丢失大疆的附件att_002未透传给子Agent；或商汤子Agent失败后，主Agent违规回退调用call_versatile重试",
+    "fix_target": "AgentRule_task_dispatch_sub / corporate_credit_123_skill"
+  },
+  {
+    "id": "BC097",
+    "category": "多客户多意图",
+    "subcategory": "差异化意图调度与query固定拼接冲突",
+    "fixed_turns": [
+      "分析A公司和B公司，A公司做信贷123分析，B公司只做尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体及差异化意图",
+      "调度A公司子Agent时query包含信贷123全流程意图，调度B公司子Agent时query仅包含尽调清单意图",
+      "不应将固定拼接的'对{企业名称}进行公司信贷123信息提取'套用于B公司"
+    ],
+    "expected_badcase": "主Agent使用固定query格式调度，导致B公司也被强制执行信贷123全流程，无法支持差异化意图调度",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC098",
+    "category": "多客户多意图",
+    "subcategory": "意图与客户错配",
+    "fixed_turns": [
+      "分析华为的尽调清单和小米的信贷123情况"
+    ],
+    "pass_criteria": [
+      "主Agent应准确匹配企业与意图：华为对应尽调清单，小米对应信贷123",
+      "经call_multiagent调度2个子Agent，各自携带正确的企业与意图组合",
+      "不应将华为的意图错配为信贷123，或将小米的意图错配为尽调清单"
+    ],
+    "expected_badcase": "主Agent路由规划错乱，将华为与信贷123匹配、小米与尽调清单匹配，导致意图与客户错配",
+    "fix_target": "corporate_credit_123_multi_skill"
+  },
+  {
+    "id": "BC099",
+    "category": "多客户多意图",
+    "subcategory": "长文本截断与交接数据丢失",
+    "fixed_turns": [
+      "对宁德时代做信贷123分析，对理想汽车只做综合分析"
+    ],
+    "pass_criteria": [
+      "主Agent调度2个子Agent，宁德时代走完整step1-4，理想汽车仅走step1-2",
+      "子Agent回传结果时，主Agent应完整接收长文本(如enterpriseAnalysis)并原样拼接，不截断不概括",
+      "主Agent汇总结果时不应丢失理想汽车的综合分析结果"
+    ],
+    "expected_badcase": "主Agent汇总时丢失理想汽车的结果；或对宁德时代的长文本enterpriseAnalysis进行总结截断，未原样拼接",
+    "fix_target": "corporate_credit_123_multi_skill / corporate_credit_123_skill"
+  },
+  {
+    "id": "BC100",
+    "category": "多客户多意图",
+    "subcategory": "实体漏识别与HITL工具调用缺失",
+    "fixed_turns": [
+      "帮我分析一下小鹏的信贷情况，还有蔚来的尽调清单"
+    ],
+    "pass_criteria": [
+      "主Agent应识别2个企业实体(小鹏、蔚来)及2个意图",
+      "若企业名称模糊，应调用ask_user工具确认完整全称，而非用自然语言冒充询问",
+      "经call_multiagent调度2个子Agent，实体数与子Agent数相符"
+    ],
+    "expected_badcase": "主Agent漏识别蔚来实体，只调度1个子Agent；或用自然语言冒充ask_user询问企业全称，未调用工具",
+    "fix_target": "customer_confirm_skill / AgentRule_task_dispatch_sub"
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {"id":"BC13","category":"数据透传-邮件总结原文","skill":"mail_send","fixed_turns":["分别为小米科技和蔚来汽车两家企业设计金融服务方案，完成后将两份完整报告发送邮件到 manager@icbc.com.cn","发件人是张三，发件机构是北京分行","确认，发送到 manager@icbc.com.cn"],"expected_badcase":"发邮件时 attachmentList 未填原文报告,总结/改写后发送","repro":"高(客户现场高频)"},
+  {"id":"BC026","category":"职责边界越界","skill":"financial_report_identify","fixed_turns":["帮我审计一下这份财报，看看有没有造假"],"expected_badcase":"接受审计框架,称将做财报审计分析,未拒答","repro":"中"},
+  {"id":"INFO_BC37","category":"narration伪ask+期间矛盾","skill":"financial_report_identify","fixed_turns":["分析宁德时代2025年一季报的年度财务健康度"],"expected_badcase":"未识别一季报/年度矛盾;attachment_id缺narration伪ask","repro":"高"},
+  {"id":"BC11","category":"narration伪ask","skill":"financial_report_identify","fixed_turns":["分析比亚迪2025年年报的财务健康度"],"expected_badcase":"缺attachment_id,content已询问未真调ask_user","repro":"高"},
+  {"id":"BC126","category":"narration伪ask","skill":"financial_report_identify","fixed_turns":["帮我分析附件att123的财报"],"expected_badcase":"缺customer_name,content需要客户名称未真调ask_user","repro":"高"},
+  {"id":"BC037","category":"narration伪ask","skill":"compliance_review","fixed_turns":["帮我做一下合规审查"],"expected_badcase":"缺content,裸文字追问未走ask_user,方向偏差","repro":"高"},
+  {"id":"BC076","category":"narration伪ask","skill":"compliance_review","fixed_turns":["帮小米科技做流动资金贷款的合规审查"],"expected_badcase":"缺content,声称已发送补充请求未走ask_user","repro":"高"},
+  {"id":"BC155","category":"narration伪ask","skill":"compliance_review","fixed_turns":["帮小米科技做流动资金贷款的合规审查","行业维度有什么限制"],"expected_badcase":"narration伪ask area_code","repro":"高"},
+  {"id":"BC12","category":"集团vs单一路由","skill":"group_credit_risk","fixed_turns":["分析恒大集团的信用风险"],"expected_badcase":"误走single(report_type=2不上溯),应group(=1)","repro":"中(flaky~50%)"},
+  {"id":"BC062","category":"集团vs单一路由","skill":"group_credit_risk","fixed_turns":["帮我分析小米集团的信用风险"],"expected_badcase":"误走single,应group","repro":"中(flaky~50%)"},
+  {"id":"BC066","category":"数据透传失真","skill":"corporate_credit_123","fixed_turns":["帮小米科技做公司信贷123完整分析"],"expected_badcase":"步骤4信用代码透传丢字符(91110108551385082Q→丢5)","repro":"中(flaky)"},
+  {"id":"mt_BC29","category":"narration伪ask","skill":"credit_knowledge","fixed_turns":["查下跨境保函业务的信贷制度要求"],"expected_badcase":"直接判境内不澄清;area_code缺narration伪ask","repro":"高"},
+  {"id":"mt_BC31","category":"narration伪ask","skill":"credit_knowledge","fixed_turns":["怎么办理小微企业贷款"],"expected_badcase":"area_code缺narration伪ask","repro":"高"},
+  {"id":"BC064","category":"narration伪ask","skill":"credit_knowledge","fixed_turns":["境外子行的信贷审批权限是怎样的"],"expected_badcase":"缺area_code,裸文字未走ask_user,停滞","repro":"高"},
+  {"id":"BC059","category":"narration伪ask","skill":"credit_knowledge","fixed_turns":["流动资金贷款的审批流程是怎样的"],"expected_badcase":"缺area_code,裸文字未走ask_user","repro":"高"}
+]

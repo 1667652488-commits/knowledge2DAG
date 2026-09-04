@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""
+llm_client.py —— LLM 网关, 端点来自 common.config。
+
+暴露 call_llm(messages, model=None, stream=False) -> str, 与 V3 工具现用签名兼容,
+V3 工具改一行 import 即可接入。失败时返回 "[LLM ...]" 串(供 json_utils.is_llm_error 识别),
+不抛异常打断调用方流程。明文 api_key 不进包, 仅 env。
+"""
+from __future__ import annotations
+
+import json
+import time
+from typing import Any, Dict, List
+
+import requests
+
+from .config import get_config
+
+
+def _log(msg: str) -> None:
+    # 静默; 需要调试可改写
+    pass
+
+
+class LLMClient:
+    """LLM 客户端基类。"""
+
+    def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        raise NotImplementedError
+
+
+class OpenAICompatibleClient(LLMClient):
+    """OpenAI 兼容协议(requests 直连, 不依赖 openai SDK)。"""
+
+    def __init__(self, base_url: str, api_key: str, model: str,
+                 timeout: int, max_retries: int, retry_delay: float,
+                 temperature: float = 0.0):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self.temperature = temperature
+
+    def chat(self, messages: List[Dict[str, str]], model: str = None,
+             stream: bool = False, temperature: float = None,
+             max_tokens: int = None, **kwargs) -> str:
+        model = model or self.model
+        temp = temperature if temperature is not None else self.temperature
+        url = self.base_url + "/chat/completions"
+        payload: Dict[str, Any] = {"model": model, "messages": messages, "stream": stream}
+        if temp is not None:
+            payload["temperature"] = temp
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        t0 = time.time()
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                if stream:
+                    resp = requests.post(url, json=payload, headers=headers,
+                                         stream=True, timeout=self.timeout)
+                    resp.raise_for_status()
+                    texts = []
+                    for line in resp.iter_lines(decode_unicode=True):
+                        if not line or not line.startswith("data:"):
+                            continue
+                        content = line[5:].strip()
+                        if content == "[DONE]":
+                            break
+                        try:
+                            delta = (json.loads(content).get("choices", [{}])[0]
+                                     .get("delta", {}).get("content", ""))
+                            if delta:
+                                texts.append(delta)
+                        except Exception:
+                            pass
+                    return "".join(texts).strip()
+
+                resp = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
+                resp.raise_for_status()
+                result = resp.json()
+                choices = result.get("choices", [])
+                if choices:
+                    out = choices[0].get("message", {}).get("content", "").strip()
+                    _log(f"LLM ok model={model} out_len={len(out)} t={time.time()-t0:.1f}s")
+                    return out
+                return ""
+            except requests.exceptions.Timeout:
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+                continue
+            except Exception as exc:
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+                    continue
+                return f"[LLM 调用错误: {type(exc).__name__}: {exc}]"
+        return f"[LLM 调用超时: 服务器在 {self.timeout}s 内未响应]"
+
+
+class IntranetClient(LLMClient):
+    """内网 AIGC LLM(OpenAI 兼容形, token + userId header 鉴权)。
+
+    请求: POST {base_url}  headers: {token, userId, Content-Type}
+          body: {messages, stream: false}  (messages 原样透传, system+user 多消息保留, 无需压扁)
+    响应: choices[0].message.content(OpenAI 形); 兜底 result.finalAnswer / result.content / content
+    token 从 env LLM_TOKEN/LLM_API_KEY 读; userId 从 config 读。
+    """
+
+    def __init__(self, base_url: str, token: str, user_id: str,
+                 timeout: int, max_retries: int, retry_delay: float, **_):
+        self.base_url = base_url
+        self.token = token
+        self.user_id = user_id
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+
+    def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        if not messages:
+            return ""
+        headers = {"Content-Type": "application/json",
+                   "token": self.token, "userId": self.user_id}
+        body = {"messages": messages, "stream": False}
+
+        t0 = time.time()
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                resp = requests.post(self.base_url, json=body, headers=headers,
+                                     timeout=self.timeout)
+                resp.raise_for_status()
+                data = resp.json()
+                # OpenAI 形
+                choices = data.get("choices") or []
+                if choices:
+                    out = str(choices[0].get("message", {}).get("content", "")).strip()
+                    if out:
+                        _log(f"IntranetLLM ok userId={self.user_id} out_len={len(out)} t={time.time()-t0:.1f}s")
+                        return out
+                # 兜底: ICBC agent 形(result.finalAnswer) / 直接 content
+                r = data.get("result")
+                if isinstance(r, dict):
+                    out = str(r.get("finalAnswer") or r.get("content") or "").strip()
+                    if out:
+                        return out
+                if data.get("content"):
+                    return str(data["content"]).strip()
+                # 业务错误(code 非 0)
+                code = data.get("code")
+                if code not in (None, "0", 0):
+                    msg = data.get("msg", "")
+                    if attempt < self.max_retries:
+                        time.sleep(self.retry_delay * attempt)
+                        continue
+                    return f"[LLM 内网业务失败: code={code} msg={msg}]"
+                return ""
+            except requests.exceptions.Timeout:
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+                continue
+            except Exception as exc:
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+                    continue
+                return f"[LLM 调用错误: {type(exc).__name__}: {exc}]"
+        return f"[LLM 调用超时: 服务器在 {self.timeout}s 内未响应]"
+
+
+class MockClient(LLMClient):
+    """冒烟用: 按 messages 末尾关键词返回合法 JSON, 便于流程贯通。"""
+    def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        last = ""
+        for m in messages:
+            if m.get("role") == "user":
+                last = m.get("content", "")
+        # 根据 prompt 内容粗略返回结构化占位
+        if "弱点" in last or "weakness" in last.lower():
+            return '[{"skill":"customer_tiering","dimension":"路由","weakness":"mock弱点","scenario":"mock场景"}]'
+        if "剧本" in last or "script" in last.lower():
+            return '[{"script_id":"MOCK01","category":"mock","fixed_turns":["mock对话"]}]'
+        if "expected_behavior" in last or "判定" in last:
+            return '{"result":"通过","expected_behavior":"在mock情况下应该mock","reason":"mock"}'
+        if "verdict" in last.lower() or "核验" in last:
+            return '{"verdict":"true_badcase","basis":"mock","confidence":0.9}'
+        return '{"mock": true}'
+
+
+_client: LLMClient | None = None
+
+
+def get_client() -> LLMClient:
+    global _client
+    if _client is None:
+        cfg = get_config().llm
+        if cfg.mode == "mock":
+            _client = MockClient()
+        elif cfg.mode == "intranet":
+            _client = IntranetClient(
+                base_url=cfg.base_url, token=cfg.api_key, user_id=cfg.user_id,
+                timeout=cfg.timeout, max_retries=cfg.max_retries,
+                retry_delay=cfg.retry_delay, session_id=cfg.session_id,
+            )
+        else:
+            _client = OpenAICompatibleClient(
+                base_url=cfg.base_url, api_key=cfg.api_key, model=cfg.model,
+                timeout=cfg.timeout, max_retries=cfg.max_retries,
+                retry_delay=cfg.retry_delay, temperature=cfg.temperature,
+            )
+    return _client
+
+
+def reset_client() -> None:
+    global _client
+    _client = None
+
+
+def call_llm(messages: list, model: str = None, stream: bool = False,
+             temperature: float = None, **kwargs) -> str:
+    """兼容 V3 的统一入口: 返回字符串, 失败返回 [LLM ...] 串。"""
+    return get_client().chat(messages, model=model, stream=stream,
+                             temperature=temperature, **kwargs)

@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""
+config.py —— 单点配置加载, env 覆盖, 路径相对 bundle 根解析。
+
+所有 LLM/agent 端点、api_key、路径在此统一, 改 config.yaml 或设 env 即可,
+不动业务代码。明文 api_key 不进包, 仅 env 入口。
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict
+
+import yaml
+
+BUNDLE_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CONFIG = BUNDLE_ROOT / "config.yaml"
+ENV_FILE = BUNDLE_ROOT / ".env"
+
+
+def _load_dotenv(env_path: Path = ENV_FILE) -> None:
+    """无依赖 .env 加载: 读 KEY=VALUE 行注入 os.environ(不覆盖已设的 env)。"""
+    if not env_path.exists():
+        return
+    try:
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k = k.strip()
+            v = v.strip().strip("'\"").strip()
+            if k and k not in os.environ:
+                os.environ[k] = v
+    except Exception:
+        pass
+
+
+# 模块加载时自动读 .env
+_load_dotenv()
+
+
+@dataclass
+class LLMConfig:
+    mode: str = "mock"            # mock | openai | intranet
+    base_url: str = ""
+    api_key: str = ""             # openai: api_key; intranet: token(优先 env LLM_TOKEN)
+    model: str = "qwen-72b"
+    temperature: float = 0.0
+    timeout: int = 150
+    max_retries: int = 4
+    retry_delay: float = 2.0
+    user_id: str = "000786411"    # intranet: userId
+    session_id: str = ""          # intranet: 留空=每次随机生成(无状态)
+    debug: bool = False           # LLM 调测: 打印请求+原始响应(env LLM_DEBUG=1 或此处 true)
+
+
+@dataclass
+class AgentConfig:
+    base_url: str = "http://localhost:18091"
+    agent_name: str = "edp_agent"
+    timeout_invoke: int = 300
+    timeout_read: int = 30
+    timeout_skill: int = 30
+    trace_wait: float = 1.0
+    # jiuwenbox(skill 沙箱后端, 8321): adapter skill_list 堵死(multiple-sandboxes)时的本地回退,
+    # 读所有 ready sandbox 并校验 skill 一致, 不一致中断。env JIUWENBOX_URL 优先
+    jiuwenbox_url: str = "http://124.71.234.237:8321"
+
+
+@dataclass
+class PathsConfig:
+    root: Path = BUNDLE_ROOT
+    runs: Path = BUNDLE_ROOT / "runs"
+    traces: Path = BUNDLE_ROOT / "data" / "traces"
+    golden: Path = BUNDLE_ROOT / "data" / "golden"
+    skills_flat: Path = BUNDLE_ROOT / "data" / "skills_flat"
+    results: Path = BUNDLE_ROOT / "data" / "results"
+    chosen: Path = BUNDLE_ROOT / "data" / "chosen"
+
+
+@dataclass
+class Config:
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    agent: AgentConfig = field(default_factory=AgentConfig)
+    paths: PathsConfig = field(default_factory=PathsConfig)
+
+
+def _resolve(p: str, root: Path) -> Path:
+    path = Path(p)
+    return path if path.is_absolute() else (root / path).resolve()
+
+
+def load_config(path: str | Path = DEFAULT_CONFIG) -> Config:
+    """读 config.yaml + env 覆盖。"""
+    data: Dict[str, Any] = {}
+    if Path(path).exists():
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+    root = _resolve(data.get("paths", {}).get("root", "."), BUNDLE_ROOT)
+
+    llm_d = data.get("llm", {})
+    # token: intranet 模式优先 env LLM_TOKEN, 回退 LLM_API_KEY, 再回退 config
+    token = os.environ.get("LLM_TOKEN") or os.environ.get("LLM_API_KEY") or llm_d.get("api_key", "")
+    llm = LLMConfig(
+        mode=os.environ.get("LLM_MODE", llm_d.get("mode", "mock")),
+        base_url=os.environ.get("LLM_BASE_URL", llm_d.get("base_url", "")),
+        api_key=token,
+        model=os.environ.get("LLM_MODEL", llm_d.get("model", "qwen-72b")),
+        temperature=float(llm_d.get("temperature", 0.0)),
+        timeout=int(llm_d.get("timeout", 150)),
+        max_retries=int(llm_d.get("max_retries", 4)),
+        retry_delay=float(llm_d.get("retry_delay", 2.0)),
+        user_id=llm_d.get("user_id", "000786411"),
+        session_id=llm_d.get("session_id", ""),
+        debug=os.environ.get("LLM_DEBUG", "").lower() in ("1", "true", "yes") or bool(llm_d.get("debug", False)),
+    )
+
+    ag_d = data.get("agent", {})
+    agent = AgentConfig(
+        base_url=os.environ.get("AGENT_BASE_URL", ag_d.get("base_url", "http://localhost:18091")),
+        agent_name=os.environ.get("AGENT_NAME", ag_d.get("agent_name", "edp_agent")),
+        timeout_invoke=int(ag_d.get("timeout_invoke", 300)),
+        timeout_read=int(ag_d.get("timeout_read", 30)),
+        timeout_skill=int(ag_d.get("timeout_skill", 30)),
+        trace_wait=float(ag_d.get("trace_wait", 1.0)),
+        jiuwenbox_url=os.environ.get("JIUWENBOX_URL", ag_d.get("jiuwenbox_url", "http://124.71.234.237:8321")),
+    )
+
+    p_d = data.get("paths", {})
+    paths = PathsConfig(
+        root=root,
+        runs=_resolve(p_d.get("runs", "runs"), root),
+        traces=_resolve(p_d.get("traces", "data/traces"), root),
+        golden=_resolve(p_d.get("golden", "data/golden"), root),
+        skills_flat=_resolve(p_d.get("skills_flat", "data/skills_flat"), root),
+        results=_resolve(p_d.get("results", "data/results"), root),
+        chosen=_resolve(p_d.get("chosen", "data/chosen"), root),
+    )
+
+    return Config(llm=llm, agent=agent, paths=paths)
+
+
+# 单例
+_cfg: Config | None = None
+
+
+def get_config() -> Config:
+    global _cfg
+    if _cfg is None:
+        _cfg = load_config()
+    return _cfg
+
+
+def reload_config(path: str | Path = DEFAULT_CONFIG) -> Config:
+    global _cfg
+    _cfg = load_config(path)
+    return _cfg
