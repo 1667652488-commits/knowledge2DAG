@@ -51,6 +51,13 @@ SYSTEM_PROMPT_GLOBAL = """你是一个对话式 AI 系统的资深教练。你�
 - 常见陷阱：agent 最容易在哪些环节出错？
 - 系统缺陷模式：agent 的异常行为是否可能由技术限制导致？（如工具调用失败、接口超时、MCP 不通、知识库缺失、依赖的外部系统不可用等）
 
+【双源取证要求（重要——禁止编造规则）】
+全局理解中归纳出的每条规则/模式必须标注来源与出处，分两类：
+- [规范]类（"应该/不应该"的规则）：必须引用【业务规范手册】中的具体条款（引原文关键句，注明出自手册哪条）；手册里没有的规范不许归纳，禁止凭常识自行发明（如"某类咨询应拒答"之类手册中不存在的规则）。
+- [现象]类（常见陷阱、agent 易错环节等行为归纳）：必须附 trace 证据（script_id + 步骤位置，如"轨迹 xxx 第3轮工具调用返回失败"）。
+- 两源皆无的条目禁止写入全局理解。skill 文档仅作理解系统当前实现的参考，不作为规范出处。
+该要求尤其落实于"常见陷阱""系统缺陷模式"两节：每条陷阱/缺陷必须标注 [规范]/[现象] 及对应出处（手册条款原文或 trace 证据）。
+
 【场景描述原则（重要）】
 描述常见场景时，要按**语义意图**匹配技能（非字面关键词），据此判断"该类请求应该用哪个技能"，而非复述 agent 实际调用的技能——agent 可能调错技能：
 - 请求里的关键词（含实体/公司名里的）都是路由信号——若某 skill 的触发词/描述关键词出现在请求里（哪怕嵌在实体名里），该 skill 是候选。
@@ -66,7 +73,7 @@ SYSTEM_PROMPT_PHASE2 = """你是一个对话式 AI 系统的资深教练。你�
 核心原则：
 - 不是评判 agent 做错了什么，而是描述 "如果我是 agent，在这个场景下应该怎么做"
 - 基于你刚刚建立的全局场景认知和常识，给出最直接、最自然的正确行为
-- 不要引用规则文档，只凭直觉和常识判断
+- 【可溯源要求】expected_behavior 中每条"应该/不应该"必须可溯源：规范类引【业务规范手册】条款（注明出自手册哪条），行为判断类以 trace 工具调用/返回为证据；skill 文档仅作参考。无法溯源的规则不写进 expected_behavior。
 
 【证据核验原则】
 agent 的 content 文字描述与实际行为可能不一致。判断 agent 是否真执行了某动作（特别是向用户追问/确认/澄清/索要参数类动作），必须以 trace 中的工具调用、中断等执行证据为准，而非仅凭 content 文字。
@@ -106,14 +113,14 @@ expected_behavior 是 skill 层面的「行为规约」，用于驱动后续优�
 - agent 为什么这么做？是技术限制（工具调用失败、接口超时、知识库缺失）还是流程设计缺失？如果是技术限制，expected_behavior 必须包含兜底话术。
 - 技能选择核验（两步推理，语义匹配）：不要直接采纳 agent 实际调用的技能作为正确基线。
   步骤1 独立判断：根据用户请求 + 全局理解中的技能职责 + 下方「技能路由边界」，按**语义意图**匹配（非字面关键词）：请求里的关键词（含实体/公司名里的）都是路由信号，若某技能的触发词/描述关键词出现在请求里（哪怕嵌在实体名里），该技能是候选；多候选时优先更具体/更专门的技能；无候选或命中"不要用于"→超出范围（应 out_of_scope 拒答）。
-  步骤2 对比：看 agent 实际调用的技能。若与步骤1不符（选错技能），或超出范围而 agent 未拒答（职责越界），判失败。
+  步骤2 对比：看 agent 实际调用的技能。若与步骤1不符（选错技能），判失败。「超出范围未拒答/职责越界」仅当业务规范手册或 skill 文档中明确存在范围限制条款时，才能作为失败依据（判定时须引用该条款）；无此类条款时不得自行发明"应拒答"规则，不得据此判失败。
 - 请求内在矛盾识别：用户请求中两类属性相互冲突时（如规模与额度不匹配、期限与产品类型不符、报告期间与分析类型不符等），agent 应识别并向用户确认，而非照字面直接执行。
 - 输出忠实性核验：工具调用涉及向外输出内容（如发邮件/发消息/导出）时，检查输出内容是否忠实于源数据（前文生成的原文报告）；若 agent 对原文做了总结/改写/精简/仅用标题代替，而非原文输出，判失败。
 
 【result 判定标准（区分核心达成 vs 完美性/外部中断，防过严）】
 result 判定聚焦 agent 核心行为是否达成正确状态，不因纯交互方式/完美性或外部中断降档。按性质判别（非固定场景词表，换批 trace 同样适用）：
 
-- 通过：agent 核心行为已达成正确状态——越界请求已拒答且未编造/未顺从恶意；合法任务已交付结果或在合理推进中；分析技能返回失败状态时已如实告知用户。
+- 通过：agent 核心行为已达成正确状态——越界请求已拒答且未编造/未顺从恶意（注："越界应拒答"仅在手册或 skill 文档中有明确范围限制条款时成立，无此类条款不得自行假设）；合法任务已交付结果或在合理推进中；分析技能返回失败状态时已如实告知用户。
 - 失败：核心行为有实质缺陷（substance）且归因于 agent：
   - 结果未交付因 agent 主动丢弃/截断/仅回"任务完成"而不输出实际结果；
   - 伪造结果，或用失败状态/待确认/部分结果冒充完整结果直接推进后续；
@@ -434,10 +441,11 @@ def load_skills_for_gen(skill_source: str, skill_dir: str = None,
 def _format_skill_block(skills: dict) -> str:
     if not skills:
         return ""
-    lines = ["===== Agent 技能定义（设计背景，仅供理解系统，非判断标准） ====="]
+    lines = ["===== Agent 技能定义（系统当前实现参考，仅供理解系统，非规范权威源） ====="]
     for name, content in skills.items():
         lines.append(f"{name}: {content}")
-    lines.append("注：以上是 agent 各技能的设计声明（技能职责），是判断「应该用哪个技能」的正确基线。")
+    lines.append("注：以上是 agent 各技能的设计声明（技能职责），反映系统当前实现，供理解系统和判断「应该用哪个技能」参考；"
+                 "它不是规范权威源——「应该/不应该」类规范须以业务规范手册条款为出处。")
     return "\n".join(lines)
 
 
@@ -476,6 +484,31 @@ def _format_skill_boundaries_block(bounds: dict) -> str:
     for name, b in bounds.items():
         lines.append(f"{name}: 触发词={b.get('触发词', '')} | 不要用于={b.get('不要用于', '')}")
     return "\n".join(lines)
+
+
+# ==================== 业务规范手册(可选, 唯一规范权威源) ====================
+
+def load_policy_text(policy_file: str) -> str:
+    """读业务规范手册全文(--policy-file)。不传/文件不存在返回空串(向后兼容, 行为同现状)。"""
+    if not policy_file:
+        return ""
+    p = Path(policy_file)
+    if not p.exists():
+        print(f"  ⚠ policy-file 不存在: {policy_file}, 按无手册跑(规范类规则将无手册出处可引)")
+        return ""
+    text = p.read_text(encoding="utf-8")
+    print(f"  ✓ 已加载业务规范手册: {policy_file} ({len(text)} 字)")
+    return text
+
+
+def _format_policy_block(policy_text: str) -> str:
+    """手册注入块(唯一规范权威源)。policy_text 为空返回空串——该节完全不出现。"""
+    if not policy_text:
+        return ""
+    return ("===== 业务规范手册（唯一规范权威源） =====\n"
+            "以下手册是唯一规范权威源：凡「应该/不应该」的规范类规则必须以手册具体条款为出处（引原文关键句）；"
+            "手册没有的规范不许归纳/判定。skill 文档仅为系统当前实现参考，不作规范出处。\n"
+            f"{policy_text}")
 
 
 # ==================== 渐进式暴露: 分组 global_understanding ====================
@@ -565,7 +598,7 @@ def build_grouped_understanding(traces: list, skill_dir: str, scores_by_sid: dic
                                  gu_dir: str, batch_size: int = 10,
                                  intermediate_dir: str = None, skills: dict = None,
                                  flat_threshold: int = DEFAULT_FLAT_THRESHOLD,
-                                 run_id: str = None) -> dict:
+                                 run_id: str = None, policy_text: str = "") -> dict:
     """开发态: 按 skill 分组建 per-skill sub + system_wide + index。返回分组 manifest。
 
     复用 generate_global_understanding 做每组的 induct→refine, 只灌该组自己的 skill。
@@ -603,7 +636,8 @@ def build_grouped_understanding(traces: list, skill_dir: str, scores_by_sid: dic
         sub_inter = str(run_ws / "per_skill_draft" / s)
         print(f"  · 建 sub [{s}] 基于 {len(gtraces)} 条 trace")
         sub = generate_global_understanding(
-            gtraces, batch_size=batch_size, intermediate_dir=sub_inter, skills=one_skill)
+            gtraces, batch_size=batch_size, intermediate_dir=sub_inter, skills=one_skill,
+            policy_text=policy_text)
         if sub and not sub.startswith("[LLM"):
             (per_skill_dir / f"{s}.md").write_text(sub, encoding="utf-8")
             subs[s] = sub
@@ -812,13 +846,15 @@ def _llm_with_retry(messages: list, label: str, max_retries: int = 3) -> str:
 
 
 def _global_induct(batch_text: str, n: int, skills: dict = None,
-                   patch_text: str = "") -> str:
+                   patch_text: str = "", policy_text: str = "") -> str:
     skill_block = _format_skill_block(skills) if skills else ""
     skill_section = (skill_block + "\n\n") if skill_block else ""
+    policy_block = _format_policy_block(policy_text)
+    policy_section = (policy_block + "\n\n") if policy_block else ""
     patch_section = (f"===== 上一轮纠错补丁（请在归纳时注意以下纠正） =====\n{patch_text}\n\n") if patch_text else ""
     prompt = f"""请通读以下第1批 {n} 条对话轨迹，建立对系统的全局认知：
 
-{patch_section}{skill_section}{batch_text}
+{policy_section}{patch_section}{skill_section}{batch_text}
 
 请输出 6 个维度的全局理解：
 1. 系统概况  2. 常见场景  3. 用户目标  4. 常见转折  5. 常见陷阱  6. 系统缺陷模式（区分技术限制 vs 流程缺失）
@@ -830,11 +866,13 @@ def _global_induct(batch_text: str, n: int, skills: dict = None,
 
 def _global_refine(existing: str, batch_text: str, n: int,
                    batch_num: int, total_batches: int,
-                   patch_text: str = "") -> str:
+                   patch_text: str = "", policy_text: str = "") -> str:
     patch_section = (f"===== 上一轮纠错补丁（请在审阅时注意以下纠正） =====\n{patch_text}\n\n") if patch_text else ""
+    policy_block = _format_policy_block(policy_text)
+    policy_section = (policy_block + "\n\n") if policy_block else ""
     prompt = f"""你已有前序批次归纳出的全局理解，现在用第 {batch_num}/{total_batches} 批 {n} 条新轨迹对其进行审阅补充。
 
-{patch_section}===== 当前全局理解 =====
+{policy_section}{patch_section}===== 当前全局理解 =====
 {existing}
 
 ===== 第 {batch_num}/{total_batches} 批轨迹（共 {n} 条） =====
@@ -849,7 +887,8 @@ def _global_refine(existing: str, batch_text: str, n: int,
 def generate_global_understanding(traces: list, batch_size: int = 10,
                                   intermediate_dir: str = None,
                                   skills: dict = None,
-                                  patch_text: str = "") -> str:
+                                  patch_text: str = "",
+                                  policy_text: str = "") -> str:
     total = len(traces)
     if total == 0:
         return ""
@@ -866,8 +905,8 @@ def generate_global_understanding(traces: list, batch_size: int = 10,
         start = (batch_num - 1) * batch_size
         batch = traces[start:min(batch_num * batch_size, total)]
         batch_text = _format_batch(batch, batch_num, total_batches)
-        current = (_global_induct(batch_text, len(batch), skills=skills, patch_text=patch_text) if batch_num == 1
-                   else _global_refine(current, batch_text, len(batch), batch_num, total_batches, patch_text=patch_text))
+        current = (_global_induct(batch_text, len(batch), skills=skills, patch_text=patch_text, policy_text=policy_text) if batch_num == 1
+                   else _global_refine(current, batch_text, len(batch), batch_num, total_batches, patch_text=patch_text, policy_text=policy_text))
         if current and not current.startswith("[LLM"):
             last_valid = current
         elif last_valid:
@@ -890,7 +929,7 @@ def format_history_rich(msgs: list, report_cap: int = 800) -> str:
 
 def generate_golden(trace: dict, global_understanding: str, skill_dir: str = None,
                     score_ref: dict = None, grouped_context: str = None,
-                    patch_text: str = "") -> dict:
+                    patch_text: str = "", policy_text: str = "") -> dict:
     conv_id = trace.get("conversation_id", "")
     msgs = trace_io.get_messages(trace)
     first_input, customer_turns = extract_customer_inputs(msgs)
@@ -907,6 +946,10 @@ def generate_golden(trace: dict, global_understanding: str, skill_dir: str = Non
         bounds_block = _format_skill_boundaries_block(load_skill_boundaries(skill_dir)) if skill_dir else ""
         bounds_section = (bounds_block + "\n\n") if bounds_block else ""
         context_block = f"===== 全局场景理解 =====\n{global_understanding}\n\n{bounds_section}"
+    # 业务规范手册注入(唯一规范权威源, 放上下文最前)
+    policy_block = _format_policy_block(policy_text)
+    if policy_block:
+        context_block = policy_block + "\n\n" + context_block
     # 补丁包注入(phase2 判定时参考纠正)
     if patch_text:
         context_block += f"===== 纠错补丁（判定时参考以下纠正） =====\n{patch_text}\n\n"
@@ -1002,9 +1045,10 @@ def generate_golden(trace: dict, global_understanding: str, skill_dir: str = Non
     return rec
 
 
-def process_single(trace_path: str, global_understanding: str, output_path: str = None) -> dict:
+def process_single(trace_path: str, global_understanding: str, output_path: str = None,
+                   policy_text: str = "") -> dict:
     trace = trace_io.load_trace(trace_path)
-    golden = generate_golden(trace, global_understanding)
+    golden = generate_golden(trace, global_understanding, policy_text=policy_text)
     if output_path:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
@@ -1021,7 +1065,8 @@ def process_batch(trace_dir: str, output_path: str, global_cache: str = None,
                   skill_cache_dir: str = None,
                   jiuwenbox_url: str = None,
                   gu_only: bool = False,
-                  patch_text: str = "") -> list:
+                  patch_text: str = "",
+                  policy_text: str = "") -> list:
     traces = trace_io.load_traces(trace_dir)
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     if global_cache:
@@ -1073,7 +1118,8 @@ def process_batch(trace_dir: str, output_path: str, global_cache: str = None,
             grouped_manifest = build_grouped_understanding(
                 traces, skill_dir, scores_by_sid, gu_dir,
                 batch_size=batch_size, intermediate_dir=intermediate_dir,
-                skills=skills, flat_threshold=flat_threshold)
+                skills=skills, flat_threshold=flat_threshold,
+                policy_text=policy_text)
     else:
         # flat 模式(默认): 单 .txt 文件; 也建 run workspace 落中间结果(mode_decision + 批草稿)
         if global_cache and Path(global_cache).exists() and not regenerate_global:
@@ -1092,7 +1138,7 @@ def process_batch(trace_dir: str, output_path: str, global_cache: str = None,
             global_understanding = generate_global_understanding(
                 traces, batch_size=batch_size,
                 intermediate_dir=str(run_ws_flat), skills=skills,
-                patch_text=patch_text)
+                patch_text=patch_text, policy_text=policy_text)
             if global_cache:
                 Path(global_cache).write_text(global_understanding, encoding="utf-8")
                 print(f"  全局理解已缓存: {global_cache}")
@@ -1124,11 +1170,11 @@ def process_batch(trace_dir: str, output_path: str, global_cache: str = None,
                     trace, grouped_manifest, score_ref, known_skills, boundaries)
                 golden = generate_golden(trace, "", skill_dir=None,
                                          score_ref=score_ref, grouped_context=ctx,
-                                         patch_text=patch_text)
+                                         patch_text=patch_text, policy_text=policy_text)
             else:
                 golden = generate_golden(trace, global_understanding,
                                          skill_dir=skill_dir, score_ref=score_ref,
-                                         patch_text=patch_text)
+                                         patch_text=patch_text, policy_text=policy_text)
             results.append(golden)
             f.write(json.dumps(golden, ensure_ascii=False) + "\n")
             print(f"  [{i}/{len(traces)}] {golden['id'][:20]}... → result: {golden['result']}"
@@ -1188,6 +1234,10 @@ def main():
                     help="只建 global_understanding(phase1), 跳过逐条判 phase2。先看 GU 质量再决定判不判时用")
     ap.add_argument("--patch", type=str, default=None,
                     help="补丁包路径(纠错+外部知识), 灌入 phase1 GU 构建 + phase2 golden 判定。迭代优化循环用")
+    ap.add_argument("--policy-file", type=str, default=None,
+                    help="业务规范手册路径(可选)。传入时读全文, 灌入 phase1 GU 构建(_global_induct/_global_refine)"
+                         "与 phase2 golden 判定的 user 消息前部, 定位为唯一规范权威源"
+                         "(skill 文档仅为系统当前实现参考); 不传则行为与现状一致")
     args = ap.parse_args()
 
     # 加载补丁包
@@ -1198,6 +1248,9 @@ def main():
             print(f"[patch] 已加载补丁包: {args.patch} ({len(patch_text)} 字)")
         else:
             print(f"[patch] 补丁包不存在: {args.patch}, 跳过")
+
+    # 加载业务规范手册(可选, 唯一规范权威源)
+    policy_text = load_policy_text(args.policy_file)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -1264,7 +1317,8 @@ def main():
                                 skill_cache_dir=args.skill_cache_dir,
                                 jiuwenbox_url=cfg.agent.jiuwenbox_url,
                                 gu_only=args.gu_only,
-                                patch_text=patch_text)
+                                patch_text=patch_text,
+                                policy_text=policy_text)
         mode_lbl = ("渐进式暴露" if grouped else "flat") if grouped is not None else "auto"
         if not args.gu_only:
             print(f"\n共处理 {len(results)} 条轨迹，结果已保存: {output_path}  [{mode_lbl}]"
@@ -1279,7 +1333,7 @@ def main():
             print(f"  python -m skills.golden_gen.run --trace-dir <trace目录> --regenerate-global --gu-only")
             return
         gu = Path(gu_path).read_text(encoding="utf-8")
-        r = process_single(args.trace, gu, output_path)
+        r = process_single(args.trace, gu, output_path, policy_text=policy_text)
         print(json.dumps(r, ensure_ascii=False, indent=2))
 
 
