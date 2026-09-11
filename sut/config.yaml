@@ -13,7 +13,7 @@ llm:
   api_key: ""              # openai: api_key; intranet: token(JWT), 优先 env LLM_TOKEN 或 .env; 明文不进包
   model: "qwen-72b"        # intranet 不用(body 无 model), 仅 openai 模式
   temperature: 0.0         # intranet 不支持, 仅 openai
-  timeout: 150             # 内网 LLM 可能慢, 建议 300
+  timeout: 600             # τ-bench 实测: GU 后期批次(累积上下文大+长文生成)150s 不够, 提到 600
   max_retries: 4
   retry_delay: 2.0
   user_id: "901177633"           # intranet: userId(header)
