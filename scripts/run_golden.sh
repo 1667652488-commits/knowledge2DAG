@@ -22,11 +22,16 @@ fi
 echo "输入轨迹: $TRACE_DIR（$(ls "$TRACE_DIR" | wc -l) 条）"
 
 cd sut
+# 产出直接落项目 runs/<ts>_golden/（不再落 sut/runs/），GU 同目录
+OUT_DIR="../runs/${TS}_golden"
+mkdir -p "$OUT_DIR"
 PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1 LLM_DEBUG=1 .venv/Scripts/python run.py golden \
   --trace-dir "../$TRACE_DIR" \
   --skill-cache-dir ../data/skills_flat \
   --policy-file ../agent/tau_bench/tau_bench/envs/retail/wiki.md \
+  --output "$OUT_DIR/golden_output.jsonl" \
+  --global-understanding "$OUT_DIR/global_understanding.txt" \
   --regenerate-global \
   --batch-size 10 \
   2>&1 | tee -a "../$LOG"
-echo "完成。日志: $LOG；产出见 sut/runs/golden/ 与 sut/runs/GU/ 最新时间戳目录"
+echo "完成。日志: $LOG；产出: runs/${TS}_golden/"

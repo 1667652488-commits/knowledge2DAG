@@ -23,6 +23,9 @@ $n = (Get-ChildItem $traceDir -File).Count
 Write-Host "输入轨迹: $traceDir（$n 条）"
 
 Set-Location sut
+# 产出直接落项目 runs\<ts>_golden\（不再落 sut\runs\），GU 同目录
+$outDir = "..\runs\${ts}_golden"
+New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $env:PYTHONIOENCODING = "utf-8"
 $env:PYTHONUNBUFFERED = "1"
 $env:LLM_DEBUG = "1"
@@ -30,7 +33,9 @@ $env:LLM_DEBUG = "1"
   --trace-dir "..\$traceDir" `
   --skill-cache-dir ..\data\skills_flat `
   --policy-file ..\agent\tau_bench\tau_bench\envs\retail\wiki.md `
+  --output "$outDir\golden_output.jsonl" `
+  --global-understanding "$outDir\global_understanding.txt" `
   --regenerate-global `
   --batch-size 10 `
   2>&1 | Tee-Object -FilePath "..\$log" -Append
-Write-Host "完成。日志: $log；产出见 sut\runs\golden\ 与 sut\runs\GU\ 最新时间戳目录"
+Write-Host "完成。日志: $log；产出: runs\${ts}_golden\"
