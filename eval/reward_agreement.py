@@ -72,16 +72,39 @@ def main():
     rate = agree / both if both else 0.0
     dist = Counter(v["result"] for v in golden.values())
 
+    # ---- 新样式混淆矩阵：行=硬判分（真实情况），列=golden 判断，带合计与对错标注 ----
+    def build_table():
+        tp = conf.get(("通过", "通过"), 0)      # 真通过，golden 判通过
+        fp = conf.get(("通过", "失败"), 0)      # 真失败，golden 判通过（漏判）
+        t  = {}
+        for g in ("通过", "部分通过", "失败"):
+            for h in ("通过", "失败"):
+                t[(h, g)] = conf.get((g, h), 0)
+        total_hp = sum(t[("通过", g)] for g in ("通过", "部分通过", "失败"))
+        total_hf = sum(t[("失败", g)] for g in ("通过", "部分通过", "失败"))
+        col_p = t[("通过", "通过")] + t[("失败", "通过")]
+        col_pp = t[("通过", "部分通过")] + t[("失败", "部分通过")]
+        col_f = t[("通过", "失败")] + t[("失败", "失败")]
+        rows_out = [
+            "| 真实情况 ↓ | golden 判通过 | golden 判部分通过 | golden 判失败 | 合计 |",
+            "|---|---|---|---|---|",
+            f"| **硬判分：通过** | {t[('通过','通过')]} [判对] | {t[('通过','部分通过')]} | {t[('通过','失败')]} [误杀] | {total_hp} |",
+            f"| **硬判分：失败** | {t[('失败','通过')]} [漏判] | {t[('失败','部分通过')]} | {t[('失败','失败')]} [判对] | {total_hf} |",
+            f"| **合计** | {col_p} | {col_pp} | {col_f} | {total_hp + total_hf} |",
+        ]
+        return rows_out
+
+    table = build_table()
+
     # ---- 终端汇总 ----
     print(f"golden: {golden_path}")
     print(f"批次:   {run_dir}")
     print(f"golden 条数: {len(golden)} | result 分布: {dict(dist)}")
     print(f"可对拍: {both} | 一致: {agree} | 一致率: {rate:.1%}")
     print()
-    print("| golden 判 \\ 硬判分 | 通过 | 失败 |")
-    print("|---|---|---|")
-    for g in ("通过", "部分通过", "失败"):
-        print(f"| {g} | {conf.get((g, '通过'), 0)} | {conf.get((g, '失败'), 0)} |")
+    print("\n".join(table))
+    print(f"\n误杀 {conf.get(('失败', '通过'), 0)} 条（实际成功但 golden 判失败）| "
+          f"漏判 {conf.get(('通过', '失败'), 0)} 条（实际失败但 golden 判通过）")
 
     # ---- report.md ----
     lines = [
@@ -92,13 +115,13 @@ def main():
         f"- golden 条数：{len(golden)}，result 分布：{dict(dist)}",
         f"- 可对拍：{both}，一致：{agree}，**一致率：{rate:.1%}**",
         "",
-        "## 混淆矩阵",
+        "## 混淆矩阵（行=硬判分真实情况，列=golden 判断）",
         "",
-        "| golden 判 \\ 硬判分 | 通过 | 失败 |",
-        "|---|---|---|",
+        *table,
+        "",
+        f"- **误杀 {conf.get(('失败', '通过'), 0)} 条**（实际成功但 golden 判失败）",
+        f"- **漏判 {conf.get(('通过', '失败'), 0)} 条**（实际失败但 golden 判通过）",
     ]
-    for g in ("通过", "部分通过", "失败"):
-        lines.append(f"| {g} | {conf.get((g, '通过'), 0)} | {conf.get((g, '失败'), 0)} |")
     lines += [
         "",
         "## 口径",
