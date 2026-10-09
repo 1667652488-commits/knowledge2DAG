@@ -127,6 +127,7 @@ result 判定聚焦 agent 核心行为是否达成正确状态，不因纯交互
   - 违规调用 skill 白名单外的工具（trace 里出现非白名单工具调用且被拒/失败）；
   - 技术失败不兜底、反复无效试错（同类失败操作重复多轮无进展）。
 - 部分通过：核心基本达成但 agent 行为确有可改进的实质点（非纯交互方式）。少用——只用于主行为对但有实质影响的中等瑕疵。
+  - 明确档位：核心目标已达成（用户诉求的最终业务结果正确完成），但存在流程性违规（如未先做身份认证、写操作前未获用户明确确认、步骤顺序不当）→ 判部分通过，不应判失败。失败只保留给核心目标未达成/结果错误/伪造结果等实质缺陷。
 - 不降档情形（防过严，重要）：
   - 仅交互方式/完美性可优化（如拒答用中断类工具还是直接文本、话术措辞是否最自然、是否先读了技能文档再拒答、是否提供了替代建议）——核心拒答/执行已对则判通过，可在 reason 注"方式可优化"但不降 result。
   - trace 因外部中断/截断未走完整流程（合法分析刚开始就被截断、用户未回复导致流程未闭环）——不归 agent，不算失败；核心已对则判通过，reason 注"外部中断/未闭环"。
@@ -1045,10 +1046,67 @@ def generate_golden(trace: dict, global_understanding: str, skill_dir: str = Non
     return rec
 
 
+# ==================== 机械校验层(后置, 规则化, 不调 LLM) ====================
+
+_AUTH_TOOLS = ("find_user_id_by_email", "find_user_id_by_name_zip")
+_VERIFY_NOTE = " [机械校验: 原判定依据与轨迹事实不符，已降级]"
+
+
+def _trace_tool_call_names(trace: dict) -> set:
+    """收集 trace 全部 tool_calls 的工具名(messages-only: assistant 消息的 function.name)。"""
+    names = set()
+    for m in trace_io.get_messages(trace):
+        if m.get("role") != "assistant":
+            continue
+        for t in (m.get("tool_calls") or []):
+            if not isinstance(t, dict):
+                continue
+            name = (t.get("function") or {}).get("name") or t.get("name") or ""
+            if name:
+                names.add(name)
+    return names
+
+
+def _verify_reason_against_trace(golden_record: dict, trace: dict) -> dict:
+    """机械核验 reason/expected_behavior 中的可核验事实断言与 trace 是否相符。
+
+    可核验断言:
+    - 「未/没有/无/跳过/缺少 + (身份)?认证」→ trace 里是否有认证类工具调用;
+    - 「未/没有 + 调用 + <具体工具名>」→ 该工具名是否在 trace 的调用序列里。
+    核验失败(断言与事实相反)且 result==失败 时降级为部分通过, reason 追加核验说明,
+    记录加 verify_adjusted: true。只降级不升级; 核验不了的断言不动。
+    """
+    if golden_record.get("result") != "失败":
+        return golden_record
+    text = f"{golden_record.get('reason', '')}\n{golden_record.get('expected_behavior', '')}"
+    if not text.strip():
+        return golden_record
+    tool_names = _trace_tool_call_names(trace)
+    contradicted = False
+
+    # 断言1: 未/没有/无/跳过/缺少 + (身份)?认证(允许中间短语, 如"未进行身份认证")
+    if re.search(r"(未|没有|无|跳过|缺少)[^，。,.;；\n]{0,8}?(身份)?认证", text):
+        if any(t in tool_names for t in _AUTH_TOOLS):
+            contradicted = True
+
+    # 断言2: 未/没有 + 调用 + <具体工具名>(标识符形态)
+    for m in re.finditer(r"(未|没有)\s*调用[^，。,.;；\n]{0,20}?([A-Za-z_][A-Za-z0-9_]{2,})", text):
+        tool = m.group(2)
+        if tool in tool_names:
+            contradicted = True
+
+    if contradicted:
+        golden_record["result"] = "部分通过"
+        golden_record["reason"] = (golden_record.get("reason", "") + _VERIFY_NOTE).strip()
+        golden_record["verify_adjusted"] = True
+    return golden_record
+
+
 def process_single(trace_path: str, global_understanding: str, output_path: str = None,
                    policy_text: str = "") -> dict:
     trace = trace_io.load_trace(trace_path)
     golden = generate_golden(trace, global_understanding, policy_text=policy_text)
+    golden = _verify_reason_against_trace(golden, trace)
     if output_path:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
@@ -1175,10 +1233,12 @@ def process_batch(trace_dir: str, output_path: str, global_cache: str = None,
                 golden = generate_golden(trace, global_understanding,
                                          skill_dir=skill_dir, score_ref=score_ref,
                                          patch_text=patch_text, policy_text=policy_text)
+            golden = _verify_reason_against_trace(golden, trace)
             results.append(golden)
             f.write(json.dumps(golden, ensure_ascii=False) + "\n")
             print(f"  [{i}/{len(traces)}] {golden['id'][:20]}... → result: {golden['result']}"
                   + ("  [有评估器参考]" if score_ref else "")
+                  + ("  [机械校验降级]" if golden.get("verify_adjusted") else "")
                   + ("  [渐进式]" if grouped else ""))
     return results
 
