@@ -7,7 +7,7 @@ golden_gen — Golden Data Generator (messages-only, common 接入)
 - LLM 走 common.llm_client(端点可配置)
 - 富证据: tool_calls(ask_user 等) + 业务报告(tool message), 不注入 reasoning
 
-输出 JSONL: {id, script_id, inputs, expected_behavior, result, reason}
+输出 JSONL: {id, script_id, inputs, expected_behavior, result, reason, outcome_result, process_issues}
 
 用法:
     python -m skills.golden_gen.run --trace-dir data/traces --output data/golden/golden_output.jsonl --regenerate-global --batch-size 10
@@ -134,12 +134,20 @@ result 判定聚焦 agent 核心行为是否达成正确状态，不因纯交互
   - 合法任务未交付判失败，仅当是 agent 行为导致；trace 因外部中断未走完不归 agent，不算失败。
 - 一句话边界：松 manner、严 substance——交互方式/外部中断不降档；结果忠实性/违规工具/不兜底这类 substance 缺陷维持失败。两者判定条件互斥，不要因放宽 manner 而放过 substance 缺陷。
 
+【双维度产出（result / outcome_result / process_issues 三字段的关系）】
+golden 的判定拆成两个独立维度，连同原 result 共三个字段：
+- outcome_result（结果轴，通过/失败）：只看用户诉求的核心业务目标最终是否正确达成（结果正确、交付完成）。流程性违规（漏认证、漏确认、顺序不当等）一律不影响此字段。伪造结果（嘴上说做了实际没调工具）本质是结果造假/结果错误，outcome_result 必须判失败。
+- process_issues（流程轴，字符串数组）：独立列举所有流程性违规，每条一句话写清"什么违规 + 证据位置"（如"第3轮直接修改订单未先做身份认证"）；无违规输出空数组 []。伪造结果除判 outcome_result=失败外，也在此记一条。
+- result（原三档，通过/部分通过/失败）：维持上方原语义不变，照常产出。
+
 【输出格式】
 必须严格按以下格式输出，不要添加额外说明：
 
 scenario：该轨迹所属的业务场景(一句话概括, 如"多技能链式发邮件""财报造假越界""缺槽位裸回复")
 expected_behavior：在xxx情况下，应该xxxx，不应该xxxx（严格按此三段式：条件+应该+不应该）
 result：通过 / 部分通过 / 失败
+outcome_result：通过 / 失败（只看核心结果轴, 流程性违规不影响; 伪造结果判失败）
+process_issues：["什么违规+证据位置", ...]（JSON 字符串数组, 无违规输出 []）
 reason：为什么这样判定（一句话）
 """
 
@@ -993,21 +1001,30 @@ def generate_golden(trace: dict, global_understanding: str, skill_dir: str = Non
     result = "未知"
     reason = ""
     scenario_llm = ""
+    outcome_result_raw = ""
+    process_issues_raw = ""
     for line in raw.split("\n"):
         line = line.strip()
         if line.startswith("scenario：") or line.startswith("scenario:"):
             scenario_llm = line.replace("scenario：", "").replace("scenario:", "").strip()
-            for marker in ['expected_behavior：', 'expected_behavior:', 'result：', 'result:', 'reason：', 'reason:']:
+            for marker in ['expected_behavior：', 'expected_behavior:', 'result：', 'result:',
+                           'reason：', 'reason:', 'outcome_result：', 'outcome_result:',
+                           'process_issues：', 'process_issues:']:
                 idx = scenario_llm.find(marker)
                 if idx != -1:
                     scenario_llm = scenario_llm[:idx].strip()
         elif line.startswith("expected_behavior：") or line.startswith("expected_behavior:"):
             eb = line.replace("expected_behavior：", "").replace("expected_behavior:", "").strip()
-            for marker in ['result：', 'result:', 'reason：', 'reason:']:
+            for marker in ['result：', 'result:', 'reason：', 'reason:',
+                           'outcome_result：', 'outcome_result:', 'process_issues：', 'process_issues:']:
                 idx = eb.find(marker)
                 if idx != -1:
                     eb = eb[:idx].strip()
             expected_behavior = eb
+        elif line.startswith("outcome_result：") or line.startswith("outcome_result:"):
+            outcome_result_raw = line.replace("outcome_result：", "").replace("outcome_result:", "").strip()
+        elif line.startswith("process_issues：") or line.startswith("process_issues:"):
+            process_issues_raw = line.replace("process_issues：", "").replace("process_issues:", "").strip()
         elif line.startswith("result：") or line.startswith("result:"):
             result = line.replace("result：", "").replace("result:", "").strip()
         elif line.startswith("reason：") or line.startswith("reason:"):
@@ -1038,9 +1055,33 @@ def generate_golden(trace: dict, global_understanding: str, skill_dir: str = Non
         score_obj = {k: v for k, v in score_ref.items()
                      if k not in ("script_id", "conversation_id")}
 
+    # outcome_result(结果轴): tolerant 解析, 缺/不规范 → None(不写死, 向后兼容)
+    outcome_result = None
+    if outcome_result_raw:
+        if "失败" in outcome_result_raw:
+            outcome_result = "失败"
+        elif "通过" in outcome_result_raw:
+            outcome_result = "通过"
+
+    # process_issues(流程轴): JSON 数组优先, 解析失败再尝试提取首个 [...]; 缺/坏 → []
+    process_issues: list = []
+    if process_issues_raw:
+        cand = process_issues_raw
+        m = re.search(r"\[.*\]", cand, flags=re.S)
+        if m:
+            cand = m.group(0)
+        try:
+            parsed = json.loads(cand)
+            if isinstance(parsed, list):
+                process_issues = [str(x).strip() for x in parsed if str(x).strip()]
+        except Exception:
+            if cand.strip("[] ").strip():
+                process_issues = [cand.strip("[] ").strip()]
+
     rec = {"id": conv_id, "script_id": trace.get("script_id", ""),
            "inputs": customer_turns, "expected_behavior": expected_behavior,
-           "result": result, "reason": reason, "scenario": scenario}
+           "result": result, "reason": reason, "scenario": scenario,
+           "outcome_result": outcome_result, "process_issues": process_issues}
     if score_obj is not None:
         rec["score"] = score_obj
     return rec
